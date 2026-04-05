@@ -1,0 +1,39 @@
+{
+    "name": "yasser-elgammal/green-core",
+    "description": "Green Framework Core",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "YasserElgammal\\Green\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "YasserElgammal\\Green\\Tests\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Yasser Elgammal",
+            "email": "yasser.elgammal@ymail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "nikic/fast-route": "^1.3",
+        "twig/twig": "^3.7",
+        "vlucas/phpdotenv": "^5.6",
+        "respect/validation": "^2.3",
+        "symfony/http-foundation": "^7.4",
+        "symfony/mailer": "^7.4",
+        "symfony/mime": "^7.4",
+        "doctrine/dbal": "^4.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.5"
+    }
+}
