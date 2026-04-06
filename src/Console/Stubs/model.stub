@@ -1,0 +1,11 @@
+<?php
+
+namespace {{ namespace }};
+
+use YasserElgammal\Green\Database\Model;
+
+class {{ class }} extends Model
+{
+    protected string $table = '{{ table }}';
+    protected string $primaryKey = '{{ primaryKey }}';
+}
