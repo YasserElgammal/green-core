@@ -118,7 +118,7 @@ class Table
             if (!isset($this->relations[$relation])) {
                 throw new \InvalidArgumentException(
                     "Relation [{$relation}] is not defined on [" . static::class . "]. " .
-                    "Available relations: [" . implode(', ', array_keys($this->relations)) . "]."
+                        "Available relations: [" . implode(', ', array_keys($this->relations)) . "]."
                 );
             }
 
@@ -247,8 +247,8 @@ class Table
         if (!class_exists($tableClass)) {
             throw new \RuntimeException(
                 "Cannot resolve Table Gateway for model [{$modelClass}]. " .
-                "Expected class [{$tableClass}] does not exist. " .
-                "Define it or add a 'table' key to the relation config."
+                    "Expected class [{$tableClass}] does not exist. " .
+                    "Define it or add a 'table' key to the relation config."
             );
         }
 
@@ -359,6 +359,17 @@ class Table
     public function fetchFromBuilder(QueryBuilder $qb): array
     {
         return $this->loadIncludes($this->hydrate($qb->executeQuery()->fetchAllAssociative()));
+    }
+
+    /**
+     * Paginate results from a raw QueryBuilder instance.
+     */
+    public function paginateFromBuilder(QueryBuilder $qb, int $perPage = 15, int $page = 1): array
+    {
+        $paginator     = new Paginator();
+        $result        = $paginator->paginate($qb, $perPage, $page);
+        $result['data'] = $this->loadIncludes($this->hydrate($result['data']));
+        return $result;
     }
 
     // ─── Persist ──────────────────────────────────────────────────────────────
