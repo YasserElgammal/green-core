@@ -1,0 +1,22 @@
+<?php
+
+use YasserElgammal\Green\Database\Migrations\Migration;
+use YasserElgammal\Green\Database\Schema\Blueprint;
+use YasserElgammal\Green\Database\Schema\Schema;
+
+class {{ class }} extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('{{ table }}', function (Blueprint $table) {
+            // $table->string('{{ column }}');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('{{ table }}', function (Blueprint $table) {
+            // $table->drop('{{ column }}');
+        });
+    }
+}
