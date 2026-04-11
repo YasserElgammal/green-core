@@ -129,4 +129,23 @@ abstract class BaseCommand extends Command
 
         return $content;
     }
+
+    /**
+     * Lazily resolve the MigrationRunner so we don't connect to the DB
+     * on every CLI boot.
+     */
+    protected function getMigrationRunner(): \YasserElgammal\Green\Database\Migrations\MigrationRunner
+    {
+        static $runner = null;
+
+        if ($runner === null) {
+            $pdo = \YasserElgammal\Green\Database\Database::getConnection()->getNativeConnection();
+            \YasserElgammal\Green\Database\Schema\Schema::setPdo($pdo);
+            
+            $migrationsPath = $this->basePath('database/migrations');
+            $runner = new \YasserElgammal\Green\Database\Migrations\MigrationRunner($pdo, $migrationsPath);
+        }
+
+        return $runner;
+    }
 }
