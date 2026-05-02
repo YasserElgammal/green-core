@@ -8,6 +8,7 @@ use YasserElgammal\Green\Transformer\TransformerResponse;
 use YasserElgammal\Green\View\View;
 use YasserElgammal\Green\Session\SessionManager;
 use YasserElgammal\Green\Http\RedirectResponse;
+use YasserElgammal\Green\Translation\TranslatorManager;
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse
@@ -68,3 +69,37 @@ if (!function_exists('redirect')) {
         return new RedirectResponse($url, $status);
     }
 }
+
+if (!function_exists('t')) {
+    /**
+     * Translate the given key.
+     *
+     * @param string              $key     Dot-notation translation key.
+     * @param array<string,mixed> $replace Interpolation replacements.
+     * @param string|null         $locale  Override locale (null = auto-resolve).
+     *
+     * @return string
+     */
+    function t(string $key, array $replace = [], ?string $locale = null): string
+    {
+        return TranslatorManager::getInstance()->get($key, $replace, $locale);
+    }
+}
+
+if (!function_exists('trans_choice')) {
+    /**
+     * Translate the given key with pluralization.
+     *
+     * @param string              $key     Dot-notation translation key.
+     * @param int                 $count   Count for pluralization.
+     * @param array<string,mixed> $replace Interpolation replacements.
+     * @param string|null         $locale  Override locale (null = auto-resolve).
+     *
+     * @return string
+     */
+    function trans_choice(string $key, int $count, array $replace = [], ?string $locale = null): string
+    {
+        return TranslatorManager::getInstance()->choice($key, $count, $replace, $locale);
+    }
+}
+

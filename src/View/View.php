@@ -17,6 +17,8 @@ class View
         ]);
 
         self::$twig->addFunction(new \Twig\TwigFunction('session', fn() => session()));
+        self::$twig->addFunction(new \Twig\TwigFunction('t', fn(string $key, array $replace = [], ?string $locale = null) => t($key, $replace, $locale)));
+        self::$twig->addFunction(new \Twig\TwigFunction('trans_choice', fn(string $key, int $count, array $replace = [], ?string $locale = null) => trans_choice($key, $count, $replace, $locale)));
     }
 
     public static function render(string $template, array $data = []): string
