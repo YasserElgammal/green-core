@@ -9,6 +9,8 @@ use YasserElgammal\Green\View\View;
 use YasserElgammal\Green\Session\SessionManager;
 use YasserElgammal\Green\Http\RedirectResponse;
 use YasserElgammal\Green\Translation\TranslatorManager;
+use YasserElgammal\Green\Security\Csrf\CsrfConfig;
+use YasserElgammal\Green\Security\Csrf\CsrfTokenManager;
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse
@@ -103,3 +105,15 @@ if (!function_exists('trans_choice')) {
     }
 }
 
+if (!function_exists('csrf_token')) {
+    /**
+     * Generate a new CSRF token pair.
+     *
+     * @return array{id: string, token: string}
+     */
+    function csrf_token(): array
+    {
+        $manager = new CsrfTokenManager(session(), new CsrfConfig());
+        return $manager->generate();
+    }
+}

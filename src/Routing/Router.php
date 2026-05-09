@@ -14,7 +14,7 @@ class Router
     protected array $routes = [];
     protected array $globalMiddleware = [];
 
-    public function addGlobalMiddleware(string $middleware): void
+    public function addGlobalMiddleware(string|object $middleware): void
     {
         $this->globalMiddleware[] = $middleware;
     }
@@ -118,10 +118,10 @@ class Router
             return new Response('', 200);
         };
 
-        foreach (array_reverse($middlewares) as $middlewareClass) {
+        foreach (array_reverse($middlewares) as $middlewareItem) {
             $next = $pipeline;
-            $pipeline = function ($req) use ($middlewareClass, $next) {
-                $middleware = new $middlewareClass();
+            $pipeline = function ($req) use ($middlewareItem, $next) {
+                $middleware = is_string($middlewareItem) ? new $middlewareItem() : $middlewareItem;
                 return $middleware->handle($req, $next);
             };
         }
