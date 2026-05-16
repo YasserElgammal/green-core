@@ -8,11 +8,34 @@ use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Http\JsonResponse;
 use YasserElgammal\Green\Http\ValidationException;
 use YasserElgammal\Green\View\View;
+use YasserElgammal\Green\ErrorHandling\ErrorRecord;
+use YasserElgammal\Green\ErrorHandling\RequestContext;
+use YasserElgammal\Green\Logging\LogManager;
 
 class ExceptionHandler
 {
+    /**
+     * @param LogManager|null $logManager  Injected by Application — nullable for backward compatibility
+     */
+    public function __construct(
+        private ?LogManager $logManager = null,
+    ) {
+    }
+
     public function handle(Throwable $e, Request $request): Response
     {
+        // Log the error through the injected LogManager (dedup prevents double-logging
+        // if the error was already captured by GreenErrorKernel's global handler)
+        if ($this->logManager !== null) {
+            try {
+                $context = RequestContext::capture();
+                $record  = ErrorRecord::fromException($e, $context);
+                $this->logManager->log($record);
+            } catch (\Throwable) {
+                // Logging must never break error rendering
+            }
+        }
+
         $isDebug = $this->isDebug();
         $expectsJson = $this->expectsJson($request);
 

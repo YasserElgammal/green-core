@@ -11,6 +11,10 @@ use YasserElgammal\Green\Http\RedirectResponse;
 use YasserElgammal\Green\Translation\TranslatorManager;
 use YasserElgammal\Green\Security\Csrf\CsrfConfig;
 use YasserElgammal\Green\Security\Csrf\CsrfTokenManager;
+use YasserElgammal\Green\ErrorHandling\ErrorRecord;
+use YasserElgammal\Green\ErrorHandling\RequestContext;
+use YasserElgammal\Green\Logging\LogLevel;
+use YasserElgammal\Green\Logging\LogManager;
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse
@@ -117,3 +121,59 @@ if (!function_exists('csrf_token')) {
         return $manager->generate();
     }
 }
+
+if (!function_exists('green_log_set_manager')) {
+    /**
+     * Register the LogManager instance for use by the green_log() helper.
+     *
+     * Called once by Application during bootstrap. This avoids static
+     * methods on classes while giving the helper access to the log system.
+     *
+     * @param LogManager $manager  The application's LogManager instance
+     */
+    function green_log_set_manager(LogManager $manager): void
+    {
+        // Store in a static variable — same pattern used by session()
+        static $stored = false;
+        if (!$stored) {
+            $GLOBALS['__green_log_manager'] = $manager;
+            $stored = true;
+        }
+    }
+}
+
+if (!function_exists('green_log')) {
+    /**
+     * Log a message manually through the Green logging system.
+     *
+     * Works at any log level. Context is automatically enriched with
+     * request data via RequestContext::capture().
+     *
+     * @param string $message  The log message
+     * @param string $level    Log level: debug, info, warning, error, critical
+     * @param array  $context  Additional context to merge with auto-captured request data
+     *
+     * @example green_log('Payment failed for order #123', 'error');
+     * @example green_log('Cache miss', 'debug', ['key' => 'users.list']);
+     */
+    function green_log(string $message, string $level = 'error', array $context = []): void
+    {
+        $manager = $GLOBALS['__green_log_manager'] ?? null;
+
+        if (!$manager instanceof LogManager) {
+            // Fallback if the logging system hasn't been booted yet
+            error_log("[Green] {$level}: {$message}");
+            return;
+        }
+
+        try {
+            $mergedContext = array_merge(RequestContext::capture(), $context);
+            $record = ErrorRecord::fromManual($message, LogLevel::from($level), $mergedContext);
+            $manager->log($record);
+        } catch (\Throwable $e) {
+            // Logging must never break application execution
+            error_log("[Green] Failed to log: {$e->getMessage()} | Original: {$message}");
+        }
+    }
+}
+
