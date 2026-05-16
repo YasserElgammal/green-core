@@ -10,9 +10,12 @@ use YasserElgammal\Green\Http\ValidationException;
 use YasserElgammal\Green\ErrorHandling\GreenErrorKernel;
 use YasserElgammal\Green\Logging\LogManager;
 use YasserElgammal\Green\Logging\Drivers\FileLogger;
+use YasserElgammal\Green\Drive\DriveManager;
+use YasserElgammal\Green\Drive\Drive;
 
 class Application
 {
+    private Drive $drive;
     public Router $router;
 
     private GreenErrorKernel $errorKernel;
@@ -22,6 +25,7 @@ class Application
     public function __construct()
     {
         $this->bootErrorHandling();
+        $this->bootDrive();
         $this->router = new Router();
     }
 
@@ -83,7 +87,22 @@ class Application
         // Go up from src/ to project root, then into storage/logs
         return dirname(__DIR__) . '/storage/logs';
     }
-}
+    /**
+     * Bootstrap the Drive file storage system.
+     *
+     * Loads the drive configuration from config/drive.php (path
+     * configurable via DRIVE_CONFIG env variable), creates the
+     * DriveManager and Drive instances, and registers the global
+     * drive() helper.
+     */
+    private function bootDrive(): void
+    {
+        $configFile = $this->resolveEnv('DRIVE_CONFIG', 'config/drive.php');
+
+        if (!str_starts_with($configFile, '/') && !preg_match('/^[A-Za-z]:[\\\\\/]/', $configFile)) {
+            $basePath = defined('BASE_PATH') ? rtrim(BASE_PATH, '/\\') : getcwd();
+            $configFile = $basePath . DIRECTORY_SEPARATOR . ltrim($configFile, '/\\');
+        }
 
         $config = [];
         if (file_exists($configFile)) {

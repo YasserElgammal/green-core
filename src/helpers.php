@@ -15,6 +15,7 @@ use YasserElgammal\Green\ErrorHandling\ErrorRecord;
 use YasserElgammal\Green\ErrorHandling\RequestContext;
 use YasserElgammal\Green\Logging\LogLevel;
 use YasserElgammal\Green\Logging\LogManager;
+use YasserElgammal\Green\Drive\Drive;
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse
@@ -174,5 +175,37 @@ if (!function_exists('green_log')) {
             // Logging must never break application execution
             error_log("[Green] Failed to log: {$e->getMessage()} | Original: {$message}");
         }
+    }
+}
+
+if (!function_exists('drive_set_instance')) {
+    /**
+     * Register the Drive instance for use by the drive() helper.
+     *
+     * @param Drive $drive
+     */
+    function drive_set_instance(Drive $drive): void
+    {
+        static $stored = false;
+        if (!$stored) {
+            $GLOBALS['__green_drive_instance'] = $drive;
+            $stored = true;
+        }
+    }
+}
+
+if (!function_exists('drive')) {
+    /**
+     * Get the global Drive instance.
+     *
+     * @return Drive
+     */
+    function drive(): Drive
+    {
+        $drive = $GLOBALS['__green_drive_instance'] ?? null;
+        if (!$drive instanceof Drive) {
+            throw new \RuntimeException('Drive has not been initialized.');
+        }
+        return $drive;
     }
 }
