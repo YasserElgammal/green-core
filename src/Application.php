@@ -100,7 +100,7 @@ class Application
         $configFile = $this->resolveEnv('DRIVE_CONFIG', 'config/drive.php');
 
         if (!str_starts_with($configFile, '/') && !preg_match('/^[A-Za-z]:[\\\\\/]/', $configFile)) {
-            $basePath = defined('BASE_PATH') ? rtrim(BASE_PATH, '/\\') : getcwd();
+            $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
             $configFile = $basePath . DIRECTORY_SEPARATOR . ltrim($configFile, '/\\');
         }
 
