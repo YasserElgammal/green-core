@@ -176,4 +176,3 @@ if (!function_exists('green_log')) {
         }
     }
 }
-

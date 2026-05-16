@@ -53,40 +53,48 @@ class Application
      * Creates the LogManager with the default FileLogger driver,
      * then registers the GreenErrorKernel which installs all
      * PHP-level error handlers (exception, error, shutdown).
-     *
-     * Configuration via environment variables (.env):
-     *
-     *   LOG_DIR            — Log directory path        (default: storage/logs)
-     *   LOG_LEVEL          — Minimum log level          (default: debug)
-     *   LOG_MAX_DUPLICATES — Max same-error logs/request (default: 5, 0 = unlimited)
-     *   LOG_RATE_LIMIT     — Max logs/fingerprint/window (default: 50)
-     *   LOG_RATE_WINDOW    — Rate limit window seconds   (default: 60)
      */
     private function bootErrorHandling(): void
     {
-        $logDir   = $this->resolveEnv('LOG_DIR', dirname(__DIR__) . '/storage/logs');
-        $logLevel = $this->resolveLogLevel();
+        $logDir = $this->resolveLogDirectory();
 
         $this->logManager = new LogManager();
-        $this->logManager->addDriver(new FileLogger($logDir, $logLevel));
-
-        // --- Deduplication config ---
-        $maxDuplicates = (int) $this->resolveEnv('LOG_MAX_DUPLICATES', '5');
-        $this->logManager->setMaxDuplicates($maxDuplicates);
-
-        // --- Rate limiting config ---
-        $rateLimit  = (int) $this->resolveEnv('LOG_RATE_LIMIT', '50');
-        $rateWindow = (int) $this->resolveEnv('LOG_RATE_WINDOW', '60');
-        if ($rateLimit > 0) {
-            $rateLimitDir = $logDir . '/rate-limits';
-            $this->logManager->setRateLimit($rateLimit, $rateWindow, $rateLimitDir);
-        }
+        $this->logManager->addDriver(new FileLogger($logDir));
 
         // Register the LogManager with the green_log() helper function
         green_log_set_manager($this->logManager);
 
         $this->errorKernel = new GreenErrorKernel($this->logManager);
         $this->errorKernel->register();
+    }
+
+    /**
+     * Resolve the log directory path.
+     *
+     * Defaults to {project-root}/storage/logs. Can be overridden
+     * via the LOG_DIR environment variable.
+     */
+    private function resolveLogDirectory(): string
+    {
+        if (!empty($_ENV['LOG_DIR'])) {
+            return $_ENV['LOG_DIR'];
+        }
+
+        // Go up from src/ to project root, then into storage/logs
+        return dirname(__DIR__) . '/storage/logs';
+    }
+}
+
+        $config = [];
+        if (file_exists($configFile)) {
+            $config = require $configFile;
+        }
+
+        $manager     = new DriveManager($config);
+        $this->drive = new Drive($manager);
+
+        // Register with the global drive() helper function
+        drive_set_instance($this->drive);
     }
 
     /**
