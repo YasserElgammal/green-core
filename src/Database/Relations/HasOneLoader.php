@@ -20,7 +20,7 @@ use YasserElgammal\Green\Database\Model;
  */
 class HasOneLoader implements RelationLoader
 {
-    public function load(array $models, string $relation, array $config): array
+    public function load(array $models, string $relation, array $config, ?\Closure $constraint = null): array
     {
         $this->validateConfig($relation, $config, ['model', 'foreign_key', 'local_key']);
 
@@ -47,13 +47,18 @@ class HasOneLoader implements RelationLoader
         $connection = Database::getConnection();
         $qb         = $connection->createQueryBuilder();
 
-        $rows = $qb
+        $qb
             ->select('*')
             ->from($relatedBlueprint->getTable())
             ->where("{$foreignKey} IN (:ids)")
-            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER)
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER);
+
+        // Apply IQL constraints (select, filter, etc.)
+        if ($constraint !== null) {
+            $constraint($qb);
+        }
+
+        $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Index by foreign key — first match wins ──────────────────────────
         $indexed = [];

@@ -23,5 +23,5 @@ interface RelationLoader
      * @param  array    $config   The relation config from the registry
      * @return Model[]            The same models with relations attached
      */
-    public function load(array $models, string $relation, array $config): array;
+    public function load(array $models, string $relation, array $config, ?\Closure $constraint = null): array;
 }
