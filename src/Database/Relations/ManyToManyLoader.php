@@ -18,7 +18,7 @@ use YasserElgammal\Green\Database\Model;
  */
 class ManyToManyLoader implements RelationLoader
 {
-    public function load(array $models, string $relation, array $config): array
+    public function load(array $models, string $relation, array $config, ?\Closure $constraint = null): array
     {
         // ── Validate config ──────────────────────────────────────────────────
         $this->validateConfig($relation, $config, [
@@ -52,7 +52,7 @@ class ManyToManyLoader implements RelationLoader
         $connection = Database::getConnection();
         $qb         = $connection->createQueryBuilder();
 
-        $rows = $qb
+        $qb
             ->select(
                 "{$relatedTable}.*",
                 "{$pivotTable}.{$foreignKey} AS __pivot_local_id"
@@ -65,9 +65,14 @@ class ManyToManyLoader implements RelationLoader
                 "{$pivotTable}.{$relatedKey} = {$relatedTable}.{$relatedPk}"
             )
             ->where("{$pivotTable}.{$foreignKey} IN (:ids)")
-            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER)
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER);
+
+        // Apply IQL constraints (limit, order, select, filter, etc.)
+        if ($constraint !== null) {
+            $constraint($qb);
+        }
+
+        $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Hydrate related rows into Model instances ────────────────────────
         $grouped = [];

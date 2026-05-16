@@ -15,7 +15,7 @@ use YasserElgammal\Green\Database\Model;
  */
 class HasManyLoader implements RelationLoader
 {
-    public function load(array $models, string $relation, array $config): array
+    public function load(array $models, string $relation, array $config, ?\Closure $constraint = null): array
     {
         // ── Validate config ──────────────────────────────────────────────────
         $this->validateConfig($relation, $config, ['model', 'foreign_key', 'local_key']);
@@ -43,13 +43,18 @@ class HasManyLoader implements RelationLoader
         $connection = Database::getConnection();
         $qb         = $connection->createQueryBuilder();
 
-        $rows = $qb
+        $qb
             ->select('*')
             ->from($relatedBlueprint->getTable())
             ->where("{$foreignKey} IN (:ids)")
-            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER)
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->setParameter('ids', $parentIds, ArrayParameterType::INTEGER);
+
+        // Apply IQL constraints (limit, order, select, filter, etc.)
+        if ($constraint !== null) {
+            $constraint($qb);
+        }
+
+        $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Hydrate related rows into Model instances ────────────────────────
         $related = array_map(fn($row) => (clone $relatedBlueprint)->fill($row), $rows);

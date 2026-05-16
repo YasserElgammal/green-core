@@ -4,6 +4,8 @@ namespace YasserElgammal\Green\Database;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
+use YasserElgammal\Green\Database\IncludeQuery\IncludeQueryEngine;
+use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedInclude;
 use YasserElgammal\Green\Database\Relations\RelationRegistry;
 use YasserElgammal\Green\Pagination\Paginator;
 
@@ -29,6 +31,13 @@ class Table
      * @var string[]
      */
     private array $pendingIncludes = [];
+
+    /**
+     * Pending IQL resolved includes (from advanced syntax).
+     *
+     * @var ResolvedInclude[]
+     */
+    private array $pendingResolved = [];
 
     /**
      * Relation registry defined by subclasses.
@@ -78,8 +87,17 @@ class Table
      */
     public function include(string|array $relations): static
     {
-        // Normalize: accept comma-separated string from ?include=posts,roles
+        // Normalize string input
         if (is_string($relations)) {
+            // Detect advanced IQL syntax: contains '('
+            if (IncludeQueryEngine::isAdvancedSyntax($relations)) {
+                $engine = new IncludeQueryEngine();
+                $resolved = $engine->process($relations, $this->relations, static::class);
+                $this->pendingResolved = array_merge($this->pendingResolved, $resolved);
+                return $this;
+            }
+
+            // Simple comma-separated: 'posts,roles'
             $relations = array_map('trim', explode(',', $relations));
         }
 
@@ -104,7 +122,17 @@ class Table
      */
     protected function loadIncludes(array $models): array
     {
-        if (empty($models) || empty($this->pendingIncludes)) {
+        if (empty($models)) {
+            return $models;
+        }
+
+        // ── Process advanced IQL resolved includes ───────────────────────────
+        if (!empty($this->pendingResolved)) {
+            $models = $this->loadResolvedIncludes($models, $this->pendingResolved);
+            $this->pendingResolved = [];
+        }
+
+        if (empty($this->pendingIncludes)) {
             return $models;
         }
 
@@ -148,6 +176,99 @@ class Table
         $this->pendingIncludes = [];
 
         return $models;
+    }
+
+    /**
+     * Load IQL resolved includes with constraint closures.
+     *
+     * @param  Model[]            $models
+     * @param  ResolvedInclude[]  $resolvedIncludes
+     * @return Model[]
+     */
+    private function loadResolvedIncludes(array $models, array $resolvedIncludes): array
+    {
+        $includeNames = [];
+
+        foreach ($resolvedIncludes as $resolved) {
+            $relation = $resolved->relation;
+            $includeNames[] = $relation;
+
+            if (!isset($this->relations[$relation])) {
+                throw new \InvalidArgumentException(
+                    "Relation [{$relation}] is not defined on [" . static::class . "]. " .
+                        "Available relations: [" . implode(', ', array_keys($this->relations)) . "]."
+                );
+            }
+
+            $config = $this->relations[$relation];
+            $type   = $config['type'] ?? throw new \InvalidArgumentException(
+                "Relation [{$relation}] is missing the required [type] key."
+            );
+
+            // Resolve loader and pass constraint closure
+            $loader = RelationRegistry::resolve($type);
+            $models = $loader->load($models, $relation, $config, $resolved->constraint);
+
+            // Process nested resolved children
+            if ($resolved->hasChildren()) {
+                $models = $this->loadNestedResolvedIncludes(
+                    $models, $relation, $config, $resolved->children
+                );
+            }
+        }
+
+        // Stamp _includes
+        foreach ($models as $model) {
+            $existing         = $model->get('_includes', []);
+            $model->_includes = array_unique(array_merge($existing, $includeNames));
+        }
+
+        return $models;
+    }
+
+    /**
+     * Recursively load nested IQL resolved includes on related models.
+     *
+     * @param  Model[]            $parentModels
+     * @param  string             $relation
+     * @param  array              $config
+     * @param  ResolvedInclude[]  $children
+     * @return Model[]
+     */
+    private function loadNestedResolvedIncludes(
+        array $parentModels,
+        string $relation,
+        array $config,
+        array $children,
+    ): array {
+        // Collect all related models from the loaded relation
+        $relatedModels = [];
+        foreach ($parentModels as $model) {
+            $value = $model->get($relation);
+
+            if ($value instanceof Model) {
+                $relatedModels[] = $value;
+            } elseif (is_array($value)) {
+                foreach ($value as $item) {
+                    if ($item instanceof Model) {
+                        $relatedModels[] = $item;
+                    }
+                }
+            }
+        }
+
+        if (empty($relatedModels)) {
+            return $parentModels;
+        }
+
+        // Resolve the child Table Gateway
+        $childTable = $this->resolveChildTable($config['model']);
+
+        // Use reflection to call loadResolvedIncludes on the child table
+        $childTable->pendingResolved = $children;
+        $childTable->loadIncludes($relatedModels);
+
+        return $parentModels;
     }
 
     /**

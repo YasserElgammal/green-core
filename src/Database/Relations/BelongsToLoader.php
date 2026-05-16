@@ -20,7 +20,7 @@ use YasserElgammal\Green\Database\Model;
  */
 class BelongsToLoader implements RelationLoader
 {
-    public function load(array $models, string $relation, array $config): array
+    public function load(array $models, string $relation, array $config, ?\Closure $constraint = null): array
     {
         // ── Validate config ──────────────────────────────────────────────────
         $this->validateConfig($relation, $config, ['model', 'foreign_key', 'owner_key']);
@@ -48,13 +48,18 @@ class BelongsToLoader implements RelationLoader
         $connection = Database::getConnection();
         $qb         = $connection->createQueryBuilder();
 
-        $rows = $qb
+        $qb
             ->select('*')
             ->from($relatedBlueprint->getTable())
             ->where("{$ownerKey} IN (:ids)")
-            ->setParameter('ids', $foreignIds, ArrayParameterType::INTEGER)
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->setParameter('ids', $foreignIds, ArrayParameterType::INTEGER);
+
+        // Apply IQL constraints (select, filter, etc.)
+        if ($constraint !== null) {
+            $constraint($qb);
+        }
+
+        $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Index related models by their owner key ──────────────────────────
         $indexed = [];
