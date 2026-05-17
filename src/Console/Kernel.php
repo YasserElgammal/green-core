@@ -2,13 +2,16 @@
 
 namespace YasserElgammal\Green\Console;
 
-use YasserElgammal\Green\Console\Commands\ServeCommand;
-use YasserElgammal\Green\Console\Commands\CreateControllerCommand;
-use YasserElgammal\Green\Console\Commands\CreateMigrationCommand;
-use YasserElgammal\Green\Console\Commands\CreateModelCommand;
-use YasserElgammal\Green\Console\Commands\MigrateCommand;
-use YasserElgammal\Green\Console\Commands\MigrateRollbackCommand;
-use YasserElgammal\Green\Console\Commands\MigrateStatusCommand;
+use YasserElgammal\Green\Console\Commands\{
+    ServeCommand,
+    CreateControllerCommand,
+    CreateMigrationCommand,
+    CreateModelCommand,
+    MigrateCommand,
+    MigrateRollbackCommand,
+    MigrateStatusCommand,
+    TranslationClearCommand,
+};
 
 class Kernel
 {
@@ -22,6 +25,7 @@ class Kernel
         MigrateCommand::class,
         MigrateRollbackCommand::class,
         MigrateStatusCommand::class,
+        TranslationClearCommand::class,
     ];
 
     public function handle(): void
