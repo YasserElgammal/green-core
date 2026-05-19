@@ -26,6 +26,7 @@ class Application
     {
         $this->bootErrorHandling();
         $this->bootDrive();
+        $this->bootValidationTranslation();
         $this->router = new Router();
     }
 
@@ -143,5 +144,23 @@ class Application
 
         $value = getenv($key);
         return ($value !== false && $value !== '') ? $value : $default;
+    }
+
+    /**
+     * Initialize dynamic translation for Respect\Validation using Factory.
+     */
+    private function bootValidationTranslation(): void
+    {
+        \Respect\Validation\Factory::setDefaultInstance(
+            (new \Respect\Validation\Factory())->withTranslator(static function (string $message): string {
+                if (function_exists('t')) {
+                    $translated = t('validation.' . $message);
+                    if ($translated !== 'validation.' . $message) {
+                        return $translated;
+                    }
+                }
+                return $message;
+            })
+        );
     }
 }
