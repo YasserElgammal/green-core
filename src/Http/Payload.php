@@ -86,12 +86,25 @@ abstract class Payload extends Request
             $value = $this->input($field);
             
             try {
+                // Humanize the field name (e.g. "first_name" -> "First name")
+                $humanizedName = ucfirst(str_replace('_', ' ', $field));
+                $validator->setName($humanizedName);
+
                 $validator->assert($value);
                 $this->validatedData[$field] = $value;
             } catch (RespectValidationException $e) {
                 // Use custom message if available, otherwise get full message from Respect
                 $customMessages = $this->messages();
-                $this->errors[$field][] = $customMessages[$field] ?? $e->getMessage();
+                if (isset($customMessages[$field])) {
+                    $this->errors[$field][] = $customMessages[$field];
+                } else {
+                    if (method_exists($e, 'getMessages')) {
+                        $nestedMessages = $e->getMessages();
+                        $this->errors[$field][] = reset($nestedMessages) ?: $e->getMessage();
+                    } else {
+                        $this->errors[$field][] = $e->getMessage();
+                    }
+                }
             }
         }
 
