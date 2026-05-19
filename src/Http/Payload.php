@@ -86,8 +86,17 @@ abstract class Payload extends Request
             $value = $this->input($field);
             
             try {
-                // Humanize the field name (e.g. "first_name" -> "First name")
-                $humanizedName = ucfirst(str_replace('_', ' ', $field));
+                // Try translating the field name dynamically, otherwise humanize it
+                $humanizedName = null;
+                if (function_exists('t')) {
+                    $translatedName = t('validation.' . $field);
+                    if ($translatedName !== 'validation.' . $field) {
+                        $humanizedName = $translatedName;
+                    }
+                }
+                if ($humanizedName === null) {
+                    $humanizedName = ucfirst(str_replace('_', ' ', $field));
+                }
                 $validator->setName($humanizedName);
 
                 $validator->assert($value);
