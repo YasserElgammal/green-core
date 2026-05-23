@@ -21,6 +21,7 @@ class View
         self::$twig->addFunction(new \Twig\TwigFunction('session', fn() => session()));
         self::$twig->addFunction(new \Twig\TwigFunction('t', fn(string $key, array $replace = [], ?string $locale = null) => t($key, $replace, $locale)));
         self::$twig->addFunction(new \Twig\TwigFunction('trans_choice', fn(string $key, int $count, array $replace = [], ?string $locale = null) => trans_choice($key, $count, $replace, $locale)));
+        self::$twig->addFunction(new \Twig\TwigFunction('current_route', fn() => \YasserElgammal\Green\Http\Request::capture()->getPath()));
 
         // CSRF Twig helpers
         self::$twig->addFunction(new \Twig\TwigFunction('csrf_token', function (): array {

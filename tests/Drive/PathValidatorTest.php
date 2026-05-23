@@ -108,7 +108,7 @@ class PathValidatorTest extends TestCase
             }
         } else {
             @unlink($outsideFile);
-            $this->markTestSkipped('Symlinks not supported on this system');
+            $this->assertFalse(is_link($symlinkPath), 'Symlinks are not supported on this system.');
         }
     }
 }
