@@ -16,6 +16,7 @@ use YasserElgammal\Green\ErrorHandling\RequestContext;
 use YasserElgammal\Green\Logging\LogLevel;
 use YasserElgammal\Green\Logging\LogManager;
 use YasserElgammal\Green\Drive\Drive;
+use YasserElgammal\Green\Connect\Connect;
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse
@@ -207,5 +208,33 @@ if (!function_exists('drive')) {
             throw new \RuntimeException('Drive has not been initialized.');
         }
         return $drive;
+    }
+}
+
+if (!function_exists('connect_set_instance')) {
+    /**
+     * Register the Connect instance for use by the connect() helper.
+     *
+     * @param Connect $connect
+     */
+    function connect_set_instance(Connect $connect): void
+    {
+        $GLOBALS['__green_connect_instance'] = $connect;
+    }
+}
+
+if (!function_exists('connect')) {
+    /**
+     * Get the global Connect instance for outgoing HTTP requests.
+     *
+     * @return Connect
+     */
+    function connect(): Connect
+    {
+        $connect = $GLOBALS['__green_connect_instance'] ?? null;
+        if (!$connect instanceof Connect) {
+            throw new \RuntimeException('Connect has not been initialized.');
+        }
+        return $connect;
     }
 }

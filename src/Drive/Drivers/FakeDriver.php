@@ -234,6 +234,15 @@ final class FakeDriver implements DriveDriverInterface
     {
         $path = $this->normalise($path);
 
+        if (class_exists(\PHPUnit\Framework\Assert::class)) {
+            \PHPUnit\Framework\Assert::assertArrayHasKey(
+                $path,
+                $this->files,
+                "Expected file [{$path}] to exist, but it does not."
+            );
+            return;
+        }
+
         if (!isset($this->files[$path])) {
             $this->fail("Expected file [{$path}] to exist, but it does not.");
         }
@@ -247,6 +256,15 @@ final class FakeDriver implements DriveDriverInterface
     public function assertMissing(string $path): void
     {
         $path = $this->normalise($path);
+
+        if (class_exists(\PHPUnit\Framework\Assert::class)) {
+            \PHPUnit\Framework\Assert::assertArrayNotHasKey(
+                $path,
+                $this->files,
+                "Expected file [{$path}] to be missing, but it exists."
+            );
+            return;
+        }
 
         if (isset($this->files[$path])) {
             $this->fail("Expected file [{$path}] to be missing, but it exists.");
@@ -263,6 +281,11 @@ final class FakeDriver implements DriveDriverInterface
         $this->assertExists($path);
 
         $actual = $this->files[$this->normalise($path)];
+
+        if (class_exists(\PHPUnit\Framework\Assert::class)) {
+            \PHPUnit\Framework\Assert::assertSame($expected, $actual, "File [{$path}] content does not match.");
+            return;
+        }
 
         if ($actual !== $expected) {
             $this->fail(
@@ -281,6 +304,15 @@ final class FakeDriver implements DriveDriverInterface
     public function assertCount(int $expected): void
     {
         $actual = count($this->files);
+
+        if (class_exists(\PHPUnit\Framework\Assert::class)) {
+            \PHPUnit\Framework\Assert::assertSame(
+                $expected,
+                $actual,
+                "Expected {$expected} files in fake storage, but found {$actual}."
+            );
+            return;
+        }
 
         if ($actual !== $expected) {
             $this->fail("Expected {$expected} files in fake storage, but found {$actual}.");

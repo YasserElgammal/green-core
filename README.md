@@ -4,3 +4,7 @@ Green Core is the heart of the Green Framework — a lightweight, modern PHP fra
 
 > ⚠️ This package is not meant to be used standalone.  
 > To start a project, use the [Green Skeleton Project](https://github.com/YasserElgammal/green).
+
+## 📖 Documentation
+
+- [Internal Core Architecture](docs/architecture.md) — Deep technical dive into the kernel, bootstrap, request lifecycle, middleware pipeline, ORM, error handling, and more.

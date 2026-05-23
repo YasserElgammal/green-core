@@ -12,10 +12,13 @@ use YasserElgammal\Green\Logging\LogManager;
 use YasserElgammal\Green\Logging\Drivers\FileLogger;
 use YasserElgammal\Green\Drive\DriveManager;
 use YasserElgammal\Green\Drive\Drive;
+use YasserElgammal\Green\Connect\ConnectManager;
+use YasserElgammal\Green\Connect\Connect;
 
 class Application
 {
     private Drive $drive;
+    private Connect $connect;
     public Router $router;
 
     private GreenErrorKernel $errorKernel;
@@ -26,6 +29,7 @@ class Application
     {
         $this->bootErrorHandling();
         $this->bootDrive();
+        $this->bootConnect();
         $this->bootValidationTranslation();
         $this->router = new Router();
     }
@@ -50,6 +54,22 @@ class Application
     public function getErrorKernel(): GreenErrorKernel
     {
         return $this->errorKernel;
+    }
+
+    /**
+     * Get the Connect instance for outgoing HTTP requests.
+     */
+    public function getConnect(): Connect
+    {
+        return $this->connect;
+    }
+
+    /**
+     * Get the ConnectManager instance for custom driver registration.
+     */
+    public function getConnectManager(): ConnectManager
+    {
+        return $this->connect->getManager();
     }
 
     /**
@@ -98,14 +118,9 @@ class Application
      */
     private function bootDrive(): void
     {
-        $configFile = $this->resolveEnv('DRIVE_CONFIG', 'config/drive.php');
-
-        if (!str_starts_with($configFile, '/') && !preg_match('/^[A-Za-z]:[\\\\\/]/', $configFile)) {
-            $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
-            $configFile = $basePath . DIRECTORY_SEPARATOR . ltrim($configFile, '/\\');
-        }
-
+        $configFile = $this->resolveConfigFile('DRIVE_CONFIG', 'config/drive.php');
         $config = [];
+
         if (file_exists($configFile)) {
             $config = require $configFile;
         }
@@ -115,6 +130,24 @@ class Application
 
         // Register with the global drive() helper function
         drive_set_instance($this->drive);
+    }
+
+    /**
+     * Bootstrap the Connect outgoing HTTP client system.
+     */
+    private function bootConnect(): void
+    {
+        $configFile = $this->resolveConfigFile('CONNECT_CONFIG', 'config/connect.php');
+        $config = [];
+
+        if (file_exists($configFile)) {
+            $config = require $configFile;
+        }
+
+        $manager       = new ConnectManager($config);
+        $this->connect = new Connect($manager);
+
+        connect_set_instance($this->connect);
     }
 
     /**
@@ -144,6 +177,18 @@ class Application
 
         $value = getenv($key);
         return ($value !== false && $value !== '') ? $value : $default;
+    }
+
+    private function resolveConfigFile(string $envKey, string $default): string
+    {
+        $configFile = $this->resolveEnv($envKey, $default);
+
+        if (!str_starts_with($configFile, '/') && !preg_match('/^[A-Za-z]:[\\\\\/]/', $configFile)) {
+            $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
+            $configFile = $basePath . DIRECTORY_SEPARATOR . ltrim($configFile, '/\\');
+        }
+
+        return $configFile;
     }
 
     /**
