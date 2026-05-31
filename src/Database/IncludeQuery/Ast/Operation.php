@@ -16,8 +16,16 @@ final readonly class Operation
 {
     public function __construct(
         public string $name,
-        public string $rawValue,
+        public string $rawValue = '',
     ) {
+    }
+
+    /**
+     * Whether this operation has a value (e.g., `limit:5` → true, `count` → false).
+     */
+    public function hasValue(): bool
+    {
+        return $this->rawValue !== '';
     }
 
     /**

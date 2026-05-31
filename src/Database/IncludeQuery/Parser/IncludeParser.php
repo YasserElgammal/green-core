@@ -19,7 +19,7 @@ use YasserElgammal\Green\Database\IncludeQuery\Exceptions\SyntaxException;
  *   include_expr  → relation ('.' relation)*
  *   relation      → IDENTIFIER ('(' operations ')')?
  *   operations    → operation (',' operation)*
- *   operation     → IDENTIFIER ':' value
+ *   operation     → IDENTIFIER (':' value)?
  *   value         → IDENTIFIER                          // simple: limit:5
  *                  | IDENTIFIER '=' IDENTIFIER           // filter: status=active
  *
@@ -149,12 +149,20 @@ final class IncludeParser
     }
 
     /**
-     * operation → IDENTIFIER ':' value
+     * operation → IDENTIFIER (':' value)?
+     *
+     * Supports both valued operations (limit:5) and value-less operations (count).
      */
     private function parseOperation(): Operation
     {
         $name = $this->expect(TokenType::Identifier, 'operation name')->value;
-        $this->expect(TokenType::Colon, "':' after operation name '{$name}'");
+
+        // Value-less operation: the next token is NOT a colon
+        if (!$this->current()->is(TokenType::Colon)) {
+            return new Operation($name);
+        }
+
+        $this->advance(); // consume ':'
         $value = $this->parseValue();
 
         return new Operation($name, $value);

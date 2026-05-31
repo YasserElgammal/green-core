@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace YasserElgammal\Green\Database\IncludeQuery\Resolver;
 
 use Doctrine\DBAL\Query\QueryBuilder;
+use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
 use YasserElgammal\Green\Database\IncludeQuery\Ast\IncludeNode;
+use YasserElgammal\Green\Database\IncludeQuery\Ast\Operation;
 use YasserElgammal\Green\Database\IncludeQuery\Operations\OperationRegistry;
 
 /**
  * Converts validated IncludeNode ASTs into ResolvedInclude objects
- * with composable constraint closures.
+ * with composable constraint closures and resolved aggregations.
  *
- * Each operation is resolved via the OperationRegistry and composed
+ * Each regular operation is resolved via the OperationRegistry and composed
  * into a single Closure(QueryBuilder): void per relation.
+ *
+ * Aggregation operations are resolved via the AggregationRegistry and
+ * attached as ResolvedAggregation objects to the ResolvedInclude.
  *
  * The resolver also injects required foreign key columns into SELECT
  * operations to preserve join integrity.
@@ -35,19 +40,77 @@ final class IncludeResolver
             $resolved[] = $this->resolveNode($node, $relations);
         }
 
-        return $resolved;
+        return $this->mergeResolvedIncludes($resolved);
+    }
+
+    /**
+     * Merge ResolvedInclude objects that target the same relation.
+     * 
+     * @param ResolvedInclude[] $includes
+     * @return ResolvedInclude[]
+     */
+    private function mergeResolvedIncludes(array $includes): array
+    {
+        /** @var array<string, ResolvedInclude> $merged */
+        $merged = [];
+
+        foreach ($includes as $include) {
+            $relation = $include->relation;
+            
+            if (!isset($merged[$relation])) {
+                $merged[$relation] = $include;
+            } else {
+                $existing = $merged[$relation];
+                
+                // Keep the existing constraint if present (or take the new one)
+                $constraint = $existing->constraint ?? $include->constraint;
+
+                // Merge aggregations
+                $aggregations = array_merge($existing->aggregations, $include->aggregations);
+                
+                // Merge children and recursively merge them
+                $children = array_merge($existing->children, $include->children);
+                $children = $this->mergeResolvedIncludes($children);
+
+                $merged[$relation] = new ResolvedInclude(
+                    relation:     $relation,
+                    constraint:   $constraint,
+                    children:     $children,
+                    aggregations: $aggregations,
+                );
+            }
+        }
+
+        return array_values($merged);
     }
 
     /**
      * Resolve a single IncludeNode into a ResolvedInclude.
+     *
+     * Partitions operations into:
+     *   - Constraint operations (limit, order, select, filter, offset) → closure
+     *   - Aggregation operations (count, sum, avg, etc.) → ResolvedAggregation[]
      */
     private function resolveNode(IncludeNode $node, array $relations): ResolvedInclude
     {
-        $constraint = null;
-        $config     = $relations[$node->relation] ?? [];
+        $constraint   = null;
+        $aggregations = [];
+        $config       = $relations[$node->relation] ?? [];
 
         if ($node->hasOperations()) {
-            $constraint = $this->buildConstraint($node, $config);
+            // Partition operations into constraints and aggregations
+            $constraintOps  = $node->operations->getNonAggregations();
+            $aggregationOps = $node->operations->getAggregations();
+
+            // Build constraint closure from non-aggregation operations
+            if (!empty($constraintOps)) {
+                $constraint = $this->buildConstraint($constraintOps, $config);
+            }
+
+            // Resolve aggregation operations
+            if (!empty($aggregationOps)) {
+                $aggregations = $this->resolveAggregations($node->relation, $aggregationOps);
+            }
         }
 
         // Resolve children recursively
@@ -57,23 +120,25 @@ final class IncludeResolver
         }
 
         return new ResolvedInclude(
-            relation:   $node->relation,
-            constraint: $constraint,
-            children:   $children,
+            relation:     $node->relation,
+            constraint:   $constraint,
+            children:     $children,
+            aggregations: $aggregations,
         );
     }
 
     /**
-     * Build a single constraint closure from all operations on a node.
+     * Build a single constraint closure from regular (non-aggregation) operations.
      *
      * The closure composes all individual operation effects into one
      * callable that modifies the QueryBuilder in sequence.
      *
+     * @param  Operation[]  $operations
+     * @param  array        $config
      * @return \Closure(QueryBuilder): void
      */
-    private function buildConstraint(IncludeNode $node, array $config): \Closure
+    private function buildConstraint(array $operations, array $config): \Closure
     {
-        $operations = $node->operations->all();
         $relationConfig = $config;
 
         return function (QueryBuilder $qb) use ($operations, $relationConfig): void {
@@ -93,6 +158,32 @@ final class IncludeResolver
                 $this->ensureJoinColumns($qb, $relationConfig);
             }
         };
+    }
+
+    /**
+     * Resolve aggregation operations into ResolvedAggregation objects.
+     *
+     * @param  string       $relation
+     * @param  Operation[]  $operations
+     * @return ResolvedAggregation[]
+     */
+    private function resolveAggregations(string $relation, array $operations): array
+    {
+        $aggregations = [];
+
+        foreach ($operations as $operation) {
+            $aggregation = AggregationRegistry::resolve($operation->name);
+            $column      = $operation->rawValue;
+
+            $aggregations[] = new ResolvedAggregation(
+                relation:      $relation,
+                aggregation:   $aggregation,
+                column:        $column,
+                attributeName: $aggregation->attributeName($relation, $column),
+            );
+        }
+
+        return $aggregations;
     }
 
     /**

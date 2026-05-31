@@ -4,7 +4,10 @@ namespace YasserElgammal\Green\Database;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
+use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationLoader;
+use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
 use YasserElgammal\Green\Database\IncludeQuery\IncludeQueryEngine;
+use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedAggregation;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedInclude;
 use YasserElgammal\Green\Database\Relations\RelationRegistry;
 use YasserElgammal\Green\Pagination\Paginator;
@@ -40,6 +43,13 @@ class Table
     private array $pendingResolved = [];
 
     /**
+     * Pending aggregation requests (from programmatic API).
+     *
+     * @var ResolvedAggregation[]
+     */
+    private array $pendingAggregations = [];
+
+    /**
      * Relation registry defined by subclasses.
      *
      * Format:
@@ -69,6 +79,142 @@ class Table
         $this->connection  = Database::getConnection();
         $this->table       = $blueprint->getTable();
         $this->primaryKey  = $blueprint->getPrimaryKey();
+    }
+
+    // ─── Aggregation API ──────────────────────────────────────────────────────
+
+    /**
+     * Queue a COUNT aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeCount('comments')
+     *   ->includeCount(['comments', 'likes'])
+     *
+     * @param  string|string[]  $relations
+     * @return static
+     */
+    public function includeCount(string|array $relations): static
+    {
+        return $this->queueAggregation('count', $relations);
+    }
+
+    /**
+     * Queue an EXISTS aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeExists('comments')
+     *   ->includeExists(['comments', 'likes'])
+     *
+     * @param  string|string[]  $relations
+     * @return static
+     */
+    public function includeExists(string|array $relations): static
+    {
+        return $this->queueAggregation('exists', $relations);
+    }
+
+    /**
+     * Queue a SUM aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeSum('orders:total')
+     *   ->includeSum(['orders:total', 'orders:tax'])
+     *
+     * @param  string|string[]  $relations  Format: 'relation:column'
+     * @return static
+     */
+    public function includeSum(string|array $relations): static
+    {
+        return $this->queueAggregation('sum', $relations);
+    }
+
+    /**
+     * Queue an AVG aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeAvg('reviews:rating')
+     *   ->includeAvg(['reviews:rating', 'reviews:score'])
+     *
+     * @param  string|string[]  $relations  Format: 'relation:column'
+     * @return static
+     */
+    public function includeAvg(string|array $relations): static
+    {
+        return $this->queueAggregation('avg', $relations);
+    }
+
+    /**
+     * Queue a MIN aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeMin('orders:total')
+     *
+     * @param  string|string[]  $relations  Format: 'relation:column'
+     * @return static
+     */
+    public function includeMin(string|array $relations): static
+    {
+        return $this->queueAggregation('min', $relations);
+    }
+
+    /**
+     * Queue a MAX aggregation on one or more relations.
+     *
+     * Usage:
+     *   ->includeMax('orders:total')
+     *
+     * @param  string|string[]  $relations  Format: 'relation:column'
+     * @return static
+     */
+    public function includeMax(string|array $relations): static
+    {
+        return $this->queueAggregation('max', $relations);
+    }
+
+    /**
+     * Queue an aggregation for the given relations.
+     *
+     * Parses 'relation:column' syntax for column-based aggregations (sum, avg, etc.).
+     * Column-less aggregations (count, exists) use 'relation' syntax.
+     *
+     * @param  string           $type       Aggregation type name
+     * @param  string|string[]  $relations  Relation(s) with optional :column suffix
+     * @return static
+     */
+    private function queueAggregation(string $type, string|array $relations): static
+    {
+        if (is_string($relations)) {
+            $relations = [$relations];
+        }
+
+        $aggregation = AggregationRegistry::resolve($type);
+
+        foreach ($relations as $spec) {
+            // Parse 'relation:column' syntax
+            $parts    = explode(':', $spec, 2);
+            $relation = $parts[0];
+            $column   = $parts[1] ?? '';
+
+            // Validate the relation exists
+            if (!isset($this->relations[$relation])) {
+                throw new \InvalidArgumentException(
+                    "Relation [{$relation}] is not defined on [" . static::class . "]. " .
+                    "Available relations: [" . implode(', ', array_keys($this->relations)) . "]."
+                );
+            }
+
+            // Validate the aggregation value
+            $aggregation->validate($column);
+
+            $this->pendingAggregations[] = new ResolvedAggregation(
+                relation:      $relation,
+                aggregation:   $aggregation,
+                column:        $column,
+                attributeName: $aggregation->attributeName($relation, $column),
+            );
+        }
+
+        return $this;
     }
 
     // ─── Include (Eager Loading) ──────────────────────────────────────────────
@@ -130,6 +276,12 @@ class Table
         if (!empty($this->pendingResolved)) {
             $models = $this->loadResolvedIncludes($models, $this->pendingResolved);
             $this->pendingResolved = [];
+        }
+
+        // ── Process pending aggregations (from programmatic API) ─────────────
+        if (!empty($this->pendingAggregations)) {
+            $models = $this->loadAggregations($models, $this->pendingAggregations);
+            $this->pendingAggregations = [];
         }
 
         if (empty($this->pendingIncludes)) {
@@ -205,15 +357,22 @@ class Table
                 "Relation [{$relation}] is missing the required [type] key."
             );
 
-            // Resolve loader and pass constraint closure
-            $loader = RelationRegistry::resolve($type);
-            $models = $loader->load($models, $relation, $config, $resolved->constraint);
+            // ── Load aggregations if present ─────────────────────────────────
+            if ($resolved->hasAggregations()) {
+                $models = $this->loadAggregations($models, $resolved->aggregations);
+            }
 
-            // Process nested resolved children
-            if ($resolved->hasChildren()) {
-                $models = $this->loadNestedResolvedIncludes(
-                    $models, $relation, $config, $resolved->children
-                );
+            // ── Load relation data (skip if aggregation-only) ────────────────
+            if (!$resolved->isAggregationOnly()) {
+                $loader = RelationRegistry::resolve($type);
+                $models = $loader->load($models, $relation, $config, $resolved->constraint);
+
+                // Process nested resolved children
+                if ($resolved->hasChildren()) {
+                    $models = $this->loadNestedResolvedIncludes(
+                        $models, $relation, $config, $resolved->children
+                    );
+                }
             }
         }
 
@@ -374,6 +533,48 @@ class Table
         }
 
         return new $tableClass();
+    }
+
+    // ─── Aggregation loading ──────────────────────────────────────────────────
+
+    /**
+     * Load aggregation results and inject them into parent models.
+     *
+     * Groups aggregations by relation for optimal query batching —
+     * multiple aggregations on the same relation are combined into
+     * a single SQL query.
+     *
+     * @param  Model[]               $models
+     * @param  ResolvedAggregation[] $aggregations
+     * @return Model[]
+     */
+    private function loadAggregations(array $models, array $aggregations): array
+    {
+        if (empty($models) || empty($aggregations)) {
+            return $models;
+        }
+
+        // Group aggregations by relation for batch loading
+        $grouped = [];
+        foreach ($aggregations as $agg) {
+            $grouped[$agg->relation][] = $agg;
+        }
+
+        $loader = new AggregationLoader();
+
+        foreach ($grouped as $relation => $relationAggs) {
+            if (!isset($this->relations[$relation])) {
+                throw new \InvalidArgumentException(
+                    "Relation [{$relation}] is not defined on [" . static::class . "]. " .
+                    "Available relations: [" . implode(', ', array_keys($this->relations)) . "]."
+                );
+            }
+
+            $config = $this->relations[$relation];
+            $models = $loader->load($models, $relation, $config, $relationAggs);
+        }
+
+        return $models;
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
