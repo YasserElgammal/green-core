@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace YasserElgammal\Green\Database\IncludeQuery\Validation;
 
 use YasserElgammal\Green\Database\IncludeQuery\Ast\IncludeNode;
+use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
 use YasserElgammal\Green\Database\IncludeQuery\Exceptions\UnknownRelationException;
 use YasserElgammal\Green\Database\IncludeQuery\Operations\OperationRegistry;
 
 /**
  * Validates parsed IncludeNode ASTs against a Table's relation registry.
  *
- * Three-level validation:
+ * Four-level validation:
  *   1. Relation existence — does the name exist in the registry?
- *   2. Operation existence — is the operation registered in OperationRegistry?
- *   3. Operation value validity — does the value pass the operation's validate()?
+ *   2. Operation classification — is it a regular operation or an aggregation?
+ *   3. Operation/aggregation existence — is it registered?
+ *   4. Value validity — does the value pass validation?
  *
  * Recursive — validates nested child nodes by resolving child Table classes.
  */
@@ -52,8 +54,16 @@ final class IncludeValidator
             );
         }
 
-        // 2 & 3. Validate each operation
+        // 2 & 3. Validate each operation (regular or aggregation)
         foreach ($node->operations->all() as $operation) {
+            // Check if this is an aggregation operation
+            if (AggregationRegistry::has($operation->name)) {
+                $aggregation = AggregationRegistry::resolve($operation->name);
+                $aggregation->validate($operation->rawValue);
+                continue;
+            }
+
+            // Otherwise, validate as a regular operation
             $handler = OperationRegistry::resolve($operation->name, $node->relation);
             $handler->validate($operation->rawValue);
         }

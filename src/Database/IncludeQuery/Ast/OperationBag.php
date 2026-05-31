@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace YasserElgammal\Green\Database\IncludeQuery\Ast;
 
+use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
+
 /**
  * Typed collection of Operation instances parsed from a relation's constraint block.
  *
@@ -54,6 +56,44 @@ final readonly class OperationBag
     public function count(): int
     {
         return count($this->operations);
+    }
+
+    /**
+     * Return only operations that are registered aggregations.
+     *
+     * @return Operation[]
+     */
+    public function getAggregations(): array
+    {
+        $registry = AggregationRegistry::class;
+
+        return array_values(array_filter(
+            $this->operations,
+            fn(Operation $op) => $registry::has($op->name),
+        ));
+    }
+
+    /**
+     * Return only operations that are NOT aggregations (regular constraints).
+     *
+     * @return Operation[]
+     */
+    public function getNonAggregations(): array
+    {
+        $registry = AggregationRegistry::class;
+
+        return array_values(array_filter(
+            $this->operations,
+            fn(Operation $op) => !$registry::has($op->name),
+        ));
+    }
+
+    /**
+     * Whether any operations in this bag are aggregations.
+     */
+    public function hasAggregations(): bool
+    {
+        return !empty($this->getAggregations());
     }
 
     /**
