@@ -86,7 +86,7 @@ class Blueprint
 
     public function timestamps(): void
     {
-        $this->add(Column::timestamp('created_at')->nullable()->default(null));
+        $this->add(Column::timestamp('created_at')->useCurrent());
         $this->add(Column::timestamp('updated_at')->nullable()->default(null));
     }
 

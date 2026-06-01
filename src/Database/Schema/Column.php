@@ -100,6 +100,13 @@ class Column
         return $this;
     }
 
+    public function useCurrent(): static
+    {
+        $this->defaultVal = 'CURRENT_TIMESTAMP';
+        $this->hasDefault = true;
+        return $this;
+    }
+
     public function autoIncrement(): static
     {
         $this->autoIncrement = true;
@@ -151,6 +158,7 @@ class Column
         if (is_null($value))    return 'NULL';
         if (is_bool($value))    return $value ? '1' : '0';
         if (is_numeric($value)) return (string) $value;
+        if ($value === 'CURRENT_TIMESTAMP') return 'CURRENT_TIMESTAMP';
         return "'" . addslashes((string) $value) . "'";
     }
 
