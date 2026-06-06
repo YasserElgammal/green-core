@@ -10,6 +10,21 @@ use YasserElgammal\Green\Connect\Exceptions\InvalidConnectionException;
 
 final class ConnectManager
 {
+    private const DEFAULT_CONFIG = [
+        'default' => 'default',
+        'connections' => [
+            'default' => [
+                'driver' => 'symfony',
+                'base_url' => '',
+                'timeout' => 10,
+                'connect_timeout' => 5,
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ],
+        ],
+    ];
+
     /**
      * @var array<string, ConnectDriverInterface>
      */
@@ -26,8 +41,11 @@ final class ConnectManager
      *     connections?: array<string,array<string,mixed>>
      * } $config
      */
-    public function __construct(private readonly array $config = [])
+    private readonly array $config;
+
+    public function __construct(array $config = [])
     {
+        $this->config = array_replace_recursive(self::DEFAULT_CONFIG, $config);
     }
 
     public function request(?string $connection = null): PendingRequest

@@ -14,6 +14,12 @@ class Router
     protected array $routes = [];
     protected array $globalMiddleware = [];
 
+    public function __construct(
+        private readonly ControllerResolver $controllerResolver = new ControllerResolver(),
+        private readonly MiddlewareResolver $middlewareResolver = new MiddlewareResolver(),
+    ) {
+    }
+
     public function addGlobalMiddleware(string|object $middleware): void
     {
         $this->globalMiddleware[] = $middleware;
@@ -81,7 +87,7 @@ class Router
         $pipeline = function ($req) use ($handler, $vars) {
             $controllerClass = $handler[0];
             $method = $handler[1];
-            $controller = new $controllerClass();
+            $controller = $this->controllerResolver->resolve($controllerClass);
 
             $reflectionMethod = new \ReflectionMethod($controllerClass, $method);
             $args = [];
@@ -121,7 +127,7 @@ class Router
         foreach (array_reverse($middlewares) as $middlewareItem) {
             $next = $pipeline;
             $pipeline = function ($req) use ($middlewareItem, $next) {
-                $middleware = is_string($middlewareItem) ? new $middlewareItem() : $middlewareItem;
+                $middleware = $this->middlewareResolver->resolve($middlewareItem);
                 return $middleware->handle($req, $next);
             };
         }

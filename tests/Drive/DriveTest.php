@@ -63,4 +63,13 @@ class DriveTest extends TestCase
         
         $fake->assertExists('faked.txt');
     }
+
+    public function test_it_uses_a_local_default_disk_without_config()
+    {
+        $manager = new DriveManager();
+
+        $this->assertSame('local', $manager->getDefaultDisk());
+        $this->assertSame('local', $manager->getConfig()['disks']['local']['driver']);
+        $this->assertStringEndsWith(DIRECTORY_SEPARATOR . 'public', $manager->getConfig()['disks']['local']['root']);
+    }
 }

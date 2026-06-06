@@ -17,6 +17,58 @@ use YasserElgammal\Green\Logging\LogLevel;
 use YasserElgammal\Green\Logging\LogManager;
 use YasserElgammal\Green\Drive\Drive;
 use YasserElgammal\Green\Connect\Connect;
+use YasserElgammal\Green\Debug\DebugConfig;
+use YasserElgammal\Green\Debug\DumpContext;
+use YasserElgammal\Green\Debug\Dumper;
+use YasserElgammal\Green\Debug\Renderers\CliRenderer;
+use YasserElgammal\Green\Debug\Renderers\HtmlRenderer;
+
+$GLOBALS['__green_started_at'] ??= $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
+
+if (!function_exists('leaf_config')) {
+    /**
+     * Configure the leaf() debug helper.
+     *
+     * Supported keys: max_depth, max_items, max_string_length, dark_theme.
+     *
+     * @param array<string,mixed>|null $config
+     */
+    function leaf_config(?array $config = null): DebugConfig
+    {
+        if ($config !== null) {
+            $GLOBALS['__green_leaf_config'] = DebugConfig::fromArray($config);
+        }
+
+        $stored = $GLOBALS['__green_leaf_config'] ?? null;
+        if ($stored instanceof DebugConfig) {
+            return $stored;
+        }
+
+        return $GLOBALS['__green_leaf_config'] = DebugConfig::fromProjectConfig();
+    }
+}
+
+if (!function_exists('leaf')) {
+    /**
+     * Dump a value with Green's native debugger and terminate execution.
+     */
+    function leaf(mixed $value): never
+    {
+        $config = leaf_config();
+        $node = (new Dumper($config))->dump($value);
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1)[0] ?? null;
+        $context = DumpContext::capture($caller);
+        $renderer = PHP_SAPI === 'cli' ? new CliRenderer() : new HtmlRenderer();
+
+        if (PHP_SAPI !== 'cli' && !headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: text/html; charset=UTF-8');
+        }
+
+        echo $renderer->render($node, $context, $config);
+        exit(1);
+    }
+}
 
 if (!function_exists('response_json')) {
     function response_json(array $data, int $status = 200): JsonResponse

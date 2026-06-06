@@ -1,0 +1,22 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Leaf Debugger
+    |--------------------------------------------------------------------------
+    |
+    | leaf() is Green Framework's dump-and-die helper for local debugging.
+    | Keep these limits conservative for large arrays, model graphs, and
+    | deeply nested objects.
+    |
+    */
+
+    'max_depth' => 6,
+
+    'max_items' => 100,
+
+    'max_string_length' => 20000,
+
+    'dark_theme' => true,
+];
