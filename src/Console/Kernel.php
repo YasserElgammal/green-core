@@ -10,6 +10,7 @@ use YasserElgammal\Green\Console\Commands\{
     MigrateCommand,
     MigrateRollbackCommand,
     MigrateStatusCommand,
+    PublishConfigCommand,
     TranslationClearCommand,
 };
 
@@ -25,6 +26,7 @@ class Kernel
         MigrateCommand::class,
         MigrateRollbackCommand::class,
         MigrateStatusCommand::class,
+        PublishConfigCommand::class,
         TranslationClearCommand::class,
     ];
 

@@ -667,6 +667,15 @@ class Table
             ->fetchOne();
     }
 
+    public function exists(): bool
+    {
+        return (bool) $this->newQuery()
+            ->select('1')
+            ->setMaxResults(1)
+            ->executeQuery()
+            ->fetchOne();
+    }
+
     /**
      * Get a raw QueryBuilder for advanced custom queries.
      */

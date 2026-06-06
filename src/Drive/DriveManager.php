@@ -22,6 +22,30 @@ use YasserElgammal\Green\Drive\Exceptions\DiskNotFoundException;
 final class DriveManager
 {
     /**
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private static function defaultConfig(array $config = []): array
+    {
+        return array_replace_recursive([
+            'default' => 'local',
+            'disks' => [
+                'local' => [
+                    'driver' => 'local',
+                    'root' => self::defaultLocalRoot(),
+                ],
+            ],
+        ], $config);
+    }
+
+    private static function defaultLocalRoot(): string
+    {
+        $basePath = defined('BASE_PATH') ? rtrim((string) constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
+
+        return $basePath . DIRECTORY_SEPARATOR . 'public';
+    }
+
+    /**
      * Resolved driver instances keyed by disk name.
      * @var array<string, DriveDriverInterface>
      */
@@ -43,8 +67,11 @@ final class DriveManager
      *     disks?: array<string, array{driver: string, root?: string, ...}>
      * } $config  Full drive configuration (typically from config/drive.php)
      */
-    public function __construct(private readonly array $config)
+    private readonly array $config;
+
+    public function __construct(array $config = [])
     {
+        $this->config = self::defaultConfig($config);
     }
 
     /**
