@@ -7,9 +7,12 @@ use YasserElgammal\Green\Console\Commands\{
     CreateControllerCommand,
     CreateMigrationCommand,
     CreateModelCommand,
+    CreateProviderCommand,
     MigrateCommand,
     MigrateRollbackCommand,
     MigrateStatusCommand,
+    RouteCacheCommand,
+    RouteClearCommand,
     PublishConfigCommand,
     TranslationClearCommand,
 };
@@ -22,26 +25,34 @@ class Kernel
         ServeCommand::class,
         CreateControllerCommand::class,
         CreateModelCommand::class,
+        CreateProviderCommand::class,
         CreateMigrationCommand::class,
         MigrateCommand::class,
         MigrateRollbackCommand::class,
         MigrateStatusCommand::class,
+        RouteCacheCommand::class,
+        RouteClearCommand::class,
         PublishConfigCommand::class,
         TranslationClearCommand::class,
     ];
 
+    protected \YasserElgammal\Green\Application $app;
+
     public function handle(): void
     {
-        $app = new Application();
+        // Boot the main application (loads config, registers providers)
+        $this->app = new \YasserElgammal\Green\Application();
+
+        $consoleApp = new Application();
 
         foreach ($this->coreCommands as $command) {
-            $app->addCommand(new $command());
+            $consoleApp->addCommand($this->app->make($command));
         }
 
         foreach ($this->commands as $command) {
-            $app->addCommand(new $command());
+            $consoleApp->addCommand($this->app->make($command));
         }
 
-        $app->run();
+        $consoleApp->run();
     }
 }

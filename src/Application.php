@@ -2,173 +2,99 @@
 
 namespace YasserElgammal\Green;
 
-use YasserElgammal\Green\Routing\Router;
+use YasserElgammal\Green\Container\Container;
+use YasserElgammal\Green\Config\Repository as ConfigRepository;
 use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
-use YasserElgammal\Green\Http\JsonResponse;
-use YasserElgammal\Green\Http\ValidationException;
-use YasserElgammal\Green\ErrorHandling\GreenErrorKernel;
-use YasserElgammal\Green\Logging\LogManager;
-use YasserElgammal\Green\Logging\Drivers\FileLogger;
-use YasserElgammal\Green\Drive\DriveManager;
-use YasserElgammal\Green\Drive\Drive;
-use YasserElgammal\Green\Connect\ConnectManager;
-use YasserElgammal\Green\Connect\Connect;
+use YasserElgammal\Green\Routing\Router;
+use YasserElgammal\Green\Exceptions\ExceptionHandler;
+use YasserElgammal\Green\Support\ServiceProvider;
 
-class Application
+class Application extends Container
 {
-    private Drive $drive;
-    private Connect $connect;
+    private array $providers = [];
     public Router $router;
-
-    private GreenErrorKernel $errorKernel;
-
-    private LogManager $logManager;
 
     public function __construct()
     {
-        $this->bootErrorHandling();
-        $this->bootDrive();
-        $this->bootConnect();
-        $this->bootValidationTranslation();
-        $this->router = new Router();
+        $this->instance(Application::class, $this);
+        $this->instance(Container::class, $this);
+        $GLOBALS['__green_app'] = $this;
+
+        $this->loadConfiguration();
+        $this->registerCoreProviders();
+        $this->registerConfiguredProviders();
+        $this->bootProviders();
+
+        $this->router = $this->make(Router::class);
+    }
+
+    private function loadConfiguration(): void
+    {
+        $config = new ConfigRepository();
+        
+        $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
+        $configPath = $this->resolveEnv('CONFIG_DIR', $basePath . DIRECTORY_SEPARATOR . 'config');
+        
+        $config->loadDirectory($configPath);
+        
+        $this->instance('config', $config);
+        $this->instance(ConfigRepository::class, $config);
+    }
+
+    private function registerCoreProviders(): void
+    {
+        $providers = [
+            \YasserElgammal\Green\Providers\LogServiceProvider::class,
+            \YasserElgammal\Green\Providers\ErrorServiceProvider::class,
+            \YasserElgammal\Green\Providers\DriveServiceProvider::class,
+            \YasserElgammal\Green\Providers\ConnectServiceProvider::class,
+            \YasserElgammal\Green\Providers\RoutingServiceProvider::class,
+            \YasserElgammal\Green\Providers\ValidationServiceProvider::class,
+            \YasserElgammal\Green\Providers\ViewServiceProvider::class,
+        ];
+
+        foreach ($providers as $provider) {
+            $this->register(new $provider($this));
+        }
+    }
+
+    private function registerConfiguredProviders(): void
+    {
+        $config = $this->make('config');
+        $providers = $config->get('app.providers', []);
+
+        foreach ($providers as $provider) {
+            if (class_exists($provider)) {
+                $this->register(new $provider($this));
+            }
+        }
+    }
+
+    public function register(ServiceProvider $provider): void
+    {
+        $provider->register();
+        $this->providers[] = $provider;
+    }
+
+    public function bootProviders(): void
+    {
+        foreach ($this->providers as $provider) {
+            $provider->boot();
+        }
     }
 
     public function handle(Request $request): Response
     {
-        return $this->router->dispatch($request);
-    }
+        $exceptionHandler = $this->make(ExceptionHandler::class);
 
-    /**
-     * Get the LogManager instance for manual driver registration
-     * or for injecting into other components (e.g. ExceptionHandler).
-     */
-    public function getLogManager(): LogManager
-    {
-        return $this->logManager;
-    }
-
-    /**
-     * Get the error kernel instance.
-     */
-    public function getErrorKernel(): GreenErrorKernel
-    {
-        return $this->errorKernel;
-    }
-
-    /**
-     * Get the Connect instance for outgoing HTTP requests.
-     */
-    public function getConnect(): Connect
-    {
-        return $this->connect;
-    }
-
-    /**
-     * Get the ConnectManager instance for custom driver registration.
-     */
-    public function getConnectManager(): ConnectManager
-    {
-        return $this->connect->getManager();
-    }
-
-    /**
-     * Bootstrap the global error handling system.
-     *
-     * Creates the LogManager with the default FileLogger driver,
-     * then registers the GreenErrorKernel which installs all
-     * PHP-level error handlers (exception, error, shutdown).
-     */
-    private function bootErrorHandling(): void
-    {
-        $logDir = $this->resolveLogDirectory();
-
-        $this->logManager = new LogManager();
-        $this->logManager->addDriver(new FileLogger($logDir));
-
-        // Register the LogManager with the green_log() helper function
-        green_log_set_manager($this->logManager);
-
-        $this->errorKernel = new GreenErrorKernel($this->logManager);
-        $this->errorKernel->register();
-    }
-
-    /**
-     * Resolve the log directory path.
-     *
-     * Defaults to {project-root}/storage/logs. Can be overridden
-     * via the LOG_DIR environment variable.
-     */
-    private function resolveLogDirectory(): string
-    {
-        if (!empty($_ENV['LOG_DIR'])) {
-            return $_ENV['LOG_DIR'];
+        try {
+            return $this->router->dispatch($request);
+        } catch (\Throwable $e) {
+            return $exceptionHandler->handle($e, $request);
         }
-
-        // Go up from src/ to project root, then into storage/logs
-        return dirname(__DIR__) . '/storage/logs';
-    }
-    /**
-     * Bootstrap the Drive file storage system.
-     *
-     * Loads the drive configuration from config/drive.php (path
-     * configurable via DRIVE_CONFIG env variable), creates the
-     * DriveManager and Drive instances, and registers the global
-     * drive() helper.
-     */
-    private function bootDrive(): void
-    {
-        $configFile = $this->resolveConfigFile('DRIVE_CONFIG', 'config/drive.php');
-        $config = [];
-
-        if (file_exists($configFile)) {
-            $config = require $configFile;
-        }
-
-        $manager     = new DriveManager($config);
-        $this->drive = new Drive($manager);
-
-        // Register with the global drive() helper function
-        drive_set_instance($this->drive);
     }
 
-    /**
-     * Bootstrap the Connect outgoing HTTP client system.
-     */
-    private function bootConnect(): void
-    {
-        $configFile = $this->resolveConfigFile('CONNECT_CONFIG', 'config/connect.php');
-        $config = [];
-
-        if (file_exists($configFile)) {
-            $config = require $configFile;
-        }
-
-        $manager       = new ConnectManager($config);
-        $this->connect = new Connect($manager);
-
-        connect_set_instance($this->connect);
-    }
-
-    /**
-     * Resolve the minimum log level from the LOG_LEVEL environment variable.
-     *
-     * Accepts: debug, info, warning, error, critical (case-insensitive).
-     * Invalid values fall back to DEBUG.
-     */
-    private function resolveLogLevel(): \YasserElgammal\Green\Logging\LogLevel
-    {
-        $level = strtolower($this->resolveEnv('LOG_LEVEL', 'debug'));
-
-        return \YasserElgammal\Green\Logging\LogLevel::tryFrom($level)
-            ?? \YasserElgammal\Green\Logging\LogLevel::DEBUG;
-    }
-
-    /**
-     * Read an environment variable with a fallback default.
-     *
-     * Checks $_ENV first (populated by phpdotenv), then getenv().
-     */
     private function resolveEnv(string $key, string $default): string
     {
         if (!empty($_ENV[$key])) {
@@ -179,33 +105,25 @@ class Application
         return ($value !== false && $value !== '') ? $value : $default;
     }
 
-    private function resolveConfigFile(string $envKey, string $default): string
+    // --- Backward Compatibility Methods ---
+
+    public function getLogManager(): \YasserElgammal\Green\Logging\LogManager
     {
-        $configFile = $this->resolveEnv($envKey, $default);
-
-        if (!str_starts_with($configFile, '/') && !preg_match('/^[A-Za-z]:[\\\\\/]/', $configFile)) {
-            $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
-            $configFile = $basePath . DIRECTORY_SEPARATOR . ltrim($configFile, '/\\');
-        }
-
-        return $configFile;
+        return $this->make(\YasserElgammal\Green\Logging\LogManager::class);
     }
 
-    /**
-     * Initialize dynamic translation for Respect\Validation using Factory.
-     */
-    private function bootValidationTranslation(): void
+    public function getErrorKernel(): \YasserElgammal\Green\ErrorHandling\GreenErrorKernel
     {
-        \Respect\Validation\Factory::setDefaultInstance(
-            (new \Respect\Validation\Factory())->withTranslator(static function (string $message): string {
-                if (function_exists('t')) {
-                    $translated = t('validation.' . $message);
-                    if ($translated !== 'validation.' . $message) {
-                        return $translated;
-                    }
-                }
-                return $message;
-            })
-        );
+        return $this->make(\YasserElgammal\Green\ErrorHandling\GreenErrorKernel::class);
+    }
+
+    public function getConnect(): \YasserElgammal\Green\Connect\Connect
+    {
+        return $this->make(\YasserElgammal\Green\Connect\Connect::class);
+    }
+
+    public function getConnectManager(): \YasserElgammal\Green\Connect\ConnectManager
+    {
+        return $this->make(\YasserElgammal\Green\Connect\ConnectManager::class);
     }
 }

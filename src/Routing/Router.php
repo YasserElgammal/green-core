@@ -7,12 +7,15 @@ use FastRoute\Dispatcher;
 use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Http\JsonResponse;
+use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
 
 class Router
 {
     protected array $routes = [];
     protected array $globalMiddleware = [];
+    private ?string $routeCacheFile = null;
+    private bool $routeCacheDisabled = true;
 
     public function __construct(
         private readonly ControllerResolver $controllerResolver = new ControllerResolver(),
@@ -23,6 +26,35 @@ class Router
     public function addGlobalMiddleware(string|object $middleware): void
     {
         $this->globalMiddleware[] = $middleware;
+    }
+
+    public function enableRouteCache(?string $cacheFile = null, bool $disabled = false): static
+    {
+        $this->routeCacheFile = $cacheFile ?? RouteCache::defaultPath();
+        $this->routeCacheDisabled = $disabled;
+
+        return $this;
+    }
+
+    public function disableRouteCache(): static
+    {
+        $this->routeCacheDisabled = true;
+
+        return $this;
+    }
+
+    public function cacheRoutes(?string $cacheFile = null): void
+    {
+        $cacheFile ??= $this->routeCacheFile ?? RouteCache::defaultPath();
+        RouteCache::ensureDirectoryExists($cacheFile);
+
+        cachedDispatcher(
+            fn(RouteCollector $collector) => $this->registerRoutesIntoCollector($collector),
+            [
+                'cacheFile' => $cacheFile,
+                'cacheDisabled' => false,
+            ]
+        );
     }
 
     public function registerRoutesFromController(string $controllerClass): void
@@ -49,14 +81,7 @@ class Router
 
     public function dispatch(Request $request): Response
     {
-        $dispatcher = simpleDispatcher(function (RouteCollector $r) {
-            foreach ($this->routes as $route) {
-                $r->addRoute($route['method'], $route['path'], [
-                    'handler' => $route['handler'],
-                    'middleware' => $route['middleware']
-                ]);
-            }
-        });
+        $dispatcher = $this->makeDispatcher();
 
         $routeInfo = $dispatcher->dispatch($request->getMethod(), $request->getPath());
 
@@ -80,6 +105,35 @@ class Router
         }
 
         return new Response('500 Internal Server Error', 500);
+    }
+
+    private function makeDispatcher(): Dispatcher
+    {
+        if ($this->routeCacheFile !== null) {
+            RouteCache::ensureDirectoryExists($this->routeCacheFile);
+
+            return cachedDispatcher(
+                fn(RouteCollector $collector) => $this->registerRoutesIntoCollector($collector),
+                [
+                    'cacheFile' => $this->routeCacheFile,
+                    'cacheDisabled' => $this->routeCacheDisabled,
+                ]
+            );
+        }
+
+        return simpleDispatcher(
+            fn(RouteCollector $collector) => $this->registerRoutesIntoCollector($collector)
+        );
+    }
+
+    private function registerRoutesIntoCollector(RouteCollector $collector): void
+    {
+        foreach ($this->routes as $route) {
+            $collector->addRoute($route['method'], $route['path'], [
+                'handler' => $route['handler'],
+                'middleware' => $route['middleware']
+            ]);
+        }
     }
 
     protected function runPipeline(array $middlewares, Request $request, array $handler, array $vars): Response
