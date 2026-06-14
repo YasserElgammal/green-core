@@ -66,6 +66,35 @@ class RouterResolverTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('user-7:auto-middleware', $response->getContent());
     }
+
+    public function testRouterCanUseCompiledRouteCache(): void
+    {
+        $cacheFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'green-routes-' . bin2hex(random_bytes(8)) . '.php';
+
+        try {
+            $router = new Router();
+            $router->registerRoutesFromController(SimpleController::class);
+            $router->cacheRoutes($cacheFile);
+
+            $this->assertFileExists($cacheFile);
+
+            $cachedRouter = new Router();
+            $cachedRouter->enableRouteCache($cacheFile);
+            $cachedRouter->registerRoutesFromController(SimpleController::class);
+
+            $response = $cachedRouter->dispatch(new Request([], [], [
+                'REQUEST_METHOD' => 'GET',
+                'REQUEST_URI' => '/simple',
+            ]));
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('simple', $response->getContent());
+        } finally {
+            if (file_exists($cacheFile)) {
+                unlink($cacheFile);
+            }
+        }
+    }
 }
 
 final class ResolverDependency

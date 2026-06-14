@@ -8,6 +8,6 @@ class Application extends SymfonyApplication
 {
     public function __construct()
     {
-        parent::__construct('Green Framework', '1.0.0');
+        parent::__construct('Green Framework', '2.0.0');
     }
 }

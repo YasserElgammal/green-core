@@ -39,11 +39,35 @@ class Response
         return $this->content;
     }
 
+    public function getHeaders(): array
+    {
+        return $this->headers;
+    }
+
+    public function getHeader(string $name): ?string
+    {
+        return $this->headers[$name] ?? null;
+    }
+
+    public function hasHeader(string $name): bool
+    {
+        return isset($this->headers[$name]);
+    }
+
+    public function withHeader(string $name, string $value): static
+    {
+        $clone = clone $this;
+        $clone->headers[$name] = $value;
+        return $clone;
+    }
+
     public function send(): void
     {
-        http_response_code($this->statusCode);
-        foreach ($this->headers as $name => $value) {
-            header("{$name}: {$value}");
+        if (!headers_sent()) {
+            http_response_code($this->statusCode);
+            foreach ($this->headers as $name => $value) {
+                header("{$name}: {$value}");
+            }
         }
         echo $this->content;
     }

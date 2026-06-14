@@ -25,6 +25,31 @@ use YasserElgammal\Green\Debug\Renderers\HtmlRenderer;
 
 $GLOBALS['__green_started_at'] ??= $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
 
+if (!function_exists('app')) {
+    function app(?string $abstract = null): mixed
+    {
+        $app = $GLOBALS['__green_app'] ?? null;
+        if (!$app instanceof \YasserElgammal\Green\Application) {
+            throw new \RuntimeException('Application has not been initialized.');
+        }
+        if ($abstract === null) {
+            return $app;
+        }
+        return $app->make($abstract);
+    }
+}
+
+if (!function_exists('config')) {
+    function config(?string $key = null, mixed $default = null): mixed
+    {
+        $config = app()->make('config');
+        if ($key === null) {
+            return $config;
+        }
+        return $config->get($key, $default);
+    }
+}
+
 if (!function_exists('leaf_config')) {
     /**
      * Configure the leaf() debug helper.

@@ -62,20 +62,16 @@ The framework employs a minimalist, explicit architecture. Unlike heavy framewor
 
 The framework bootstrapping is initiated in the [`Application`](../src/Application.php) class constructor.
 
-```
-new Application($basePath)
-  ├── bootErrorHandling()      → LogManager + GreenErrorKernel
-  ├── bootDrive()              → DriveManager + drive() helper
-  ├── bootConnect()            → ConnectManager + connect() helper
-  ├── bootValidationTranslation() → Respect\Validation i18n wiring
-  └── new Router()             → FastRoute wrapper
+```text
+new Application()
+  ├── loadConfiguration()      → Loads all PHP files from `config/` via ConfigRepository
+  ├── registerCoreProviders()  → Registers Service Providers (Log, Error, Drive, Connect, Routing, Validation, View)
+  └── bootProviders()          → Calls boot() on all registered providers
 ```
 
-1. **`bootErrorHandling()`** — Instantiates the global [`LogManager`](../src/Logging/LogManager.php), registers the default [`FileLogger`](../src/Logging/Drivers/FileLogger.php) driver, and mounts the [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php). This kernel immediately hooks into PHP's low-level error handlers (`set_exception_handler`, `set_error_handler`, `register_shutdown_function`).
-2. **`bootDrive()`** — Initializes the storage system ([`DriveManager`](../src/Drive/DriveManager.php)) by reading configuration and registers a global instance for the `drive()` helper.
-3. **`bootConnect()`** — Initializes the outgoing HTTP client system ([`ConnectManager`](../src/Connect/ConnectManager.php)) by reading configuration and registers a global instance for the `connect()` helper. No external request is sent during boot; network I/O only happens when application code calls `connect()->get()`, `post()`, etc.
-4. **`bootValidationTranslation()`** — Dynamically configures the `Respect\Validation` factory to pipe validation messages through the framework's localization engine (`t()`).
-5. **Router Initialization** — Instantiates the [`Router`](../src/Routing/Router.php), which wraps `nikic/fast-route`.
+1. **`loadConfiguration()`** — Initializes the [`ConfigRepository`](../src/Config/Repository.php) and loads all `.php` files from the `config/` directory. The config is bound to the container and accessible via the `config()` helper.
+2. **`registerCoreProviders()`** — Binds fundamental framework services into the Container via Service Providers.
+3. **`bootProviders()`** — Executes the `boot` lifecycle method on all registered providers, initializing global helpers like `drive()`, `connect()`, and configuring the Twig view engine.
 
 ---
 
@@ -124,19 +120,18 @@ sequenceDiagram
 
 ## 5. Service Container Internals
 
-Green makes a deliberate architectural decision to **not** implement a global DI Container (like Laravel's Service Container or Symfony's DependencyInjection).
+Green utilizes a lightweight, native Service Container to manage dependencies and perform auto-wiring. 
+The [`Application`](../src/Application.php) itself extends the [`Container`](../src/Container/Container.php).
 
-### Why No Global Container?
+### Container Features
 
-This is not an omission — it's a core design choice that directly supports Green's philosophy of **explicit over magic** and **predictable runtime behavior**. A global container introduces hidden resolution paths, implicit singletons, and makes the call stack opaque.
+- **Bindings & Singletons**: Use `bind()`, `singleton()`, and `instance()` for explicitly defining how dependencies are resolved.
+- **Auto-Wiring**: Uses PHP's `ReflectionClass` to automatically inject dependencies into class constructors.
+- **Circular Dependency Detection**: Prevents infinite loops when resolving nested dependencies.
 
-### How Services Are Wired Instead
+### Resolving Dependencies
 
-| Mechanism | Description |
-|---|---|
-| **Explicit Managers** | Extensibility is domain-scoped. Storage → `DriveManager`. External APIs → `ConnectManager`. Logging → `LogManager`. Translation → `TranslatorManager`. |
-| **Controller Method Injection** | Inside [`Router::runPipeline()`](../src/Routing/Router.php), `ReflectionMethod` analyzes parameter types. `Request` is injected directly; `Payload` subclasses are instantiated (triggering validation). |
-| **Helper Functions** | Singleton instances for core subsystems are attached to `$GLOBALS` during bootstrap and exposed via pure helpers: `session()`, `drive()`, `connect()`, `t()`, `trans_choice()`. |
+Dependencies can be resolved explicitly via `$app->make(ClassName::class)` or the global `app(ClassName::class)` helper. Most commonly, dependencies are automatically injected into Controllers and Middlewares by the Router's pipeline using the Container's auto-wiring capabilities.
 
 ---
 
@@ -378,23 +373,31 @@ Flash data uses Symfony's `FlashBag` — values are automatically removed after 
 
 ## 14. Extensibility & Service Providers
 
-Because there is no global Service Provider array, extensibility is explicitly scoped to each subsystem manager:
+Extensibility in Green is managed primarily through **Service Providers**.
+
+### Service Providers
+
+Providers extend the abstract [`ServiceProvider`](../src/Support/ServiceProvider.php) class and contain two lifecycle methods:
+
+- `register()`: Bind things into the container. Do not execute any logic or resolve other services here.
+- `boot()`: Execute bootstrap logic after all other providers have been registered.
 
 ```php
-// Custom storage driver
-$driveManager->extend('s3', fn(array $config) => new S3Driver($config));
+class CustomServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->singleton(MyService::class, fn($app) => new MyService($app->make('config')));
+    }
 
-// Custom ORM relation type
-RelationRegistry::register('morphTo', MorphToLoader::class);
-
-// Custom translation provider
-TranslatorManager::builder()
-    ->addProvider(new RedisProvider())
-    ->build();
-
-// Custom logging driver
-$logManager->addDriver(new SentryLogger());
+    public function boot(): void
+    {
+        // Application setup logic
+    }
+}
 ```
+
+This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider.
 
 ---
 

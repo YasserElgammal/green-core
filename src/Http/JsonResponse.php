@@ -15,7 +15,8 @@ class JsonResponse extends Response
 
     public function setData(mixed $data): static
     {
-        $this->content = json_encode($data);
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $this->content = $json;
         return $this;
     }
 }

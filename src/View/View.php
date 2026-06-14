@@ -11,11 +11,13 @@ class View
 {
     protected static ?Environment $twig = null;
 
-    public static function init(string $viewsPath): void
+    public static function init(string $viewsPath, ?string $cachePath = null, bool $debug = false): void
     {
         $loader = new FilesystemLoader($viewsPath);
         self::$twig = new Environment($loader, [
-            'cache' => false,
+            'cache' => $cachePath ?: false,
+            'debug' => $debug,
+            'auto_reload' => $debug,
         ]);
 
         self::$twig->addFunction(new \Twig\TwigFunction('session', fn() => session()));
