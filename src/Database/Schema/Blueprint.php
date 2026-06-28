@@ -194,87 +194,25 @@ class Blueprint
 
     public function buildCreateStatements(): array
     {
-        $parts = [];
-
-        foreach ($this->operations as ['action' => $action, 'column' => $col]) {
-            if ($action === 'add') {
-                $parts[] = '  ' . $col->toSql();
-            }
-        }
-
-        if (!empty($this->primaryKeys)) {
-            $keys = implode('`, `', $this->primaryKeys);
-            $parts[] = "  PRIMARY KEY (`{$keys}`)";
-        }
-
-        foreach ($this->foreignKeys as $fk) {
-            $sql = "  CONSTRAINT `{$fk['name']}` FOREIGN KEY (`{$fk['column']}`) REFERENCES `{$fk['reference_table']}` (`{$fk['reference_column']}`)";
-
-            if ($fk['on_delete']) {
-                $sql .= " ON DELETE {$fk['on_delete']}";
-            }
-
-            if ($fk['on_update']) {
-                $sql .= " ON UPDATE {$fk['on_update']}";
-            }
-
-            $parts[] = $sql;
-        }
-
-        $colsSql = implode(",\n", $parts);
-
-        $statements = [
-            "CREATE TABLE `{$this->table}` (\n{$colsSql}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-        ];
-
-        foreach ($this->indexes as $idx) {
-            $cols = '`' . implode('`, `', $idx['columns']) . '`';
-            $statements[] = "CREATE INDEX `{$idx['name']}` ON `{$this->table}` ({$cols})";
-        }
-
-        return $statements;
+        $grammar = GrammarFactory::resolve($this->pdo);
+        return $grammar->compileCreate(
+            $this->table,
+            $this->operations,
+            $this->primaryKeys,
+            $this->indexes,
+            $this->foreignKeys
+        );
     }
 
     public function buildAlterStatements(): array
     {
-        $statements = [];
-
-        foreach ($this->operations as ['action' => $action, 'column' => $col]) {
-            switch ($action) {
-                case 'add':
-                    $statements[] = "ALTER TABLE `{$this->table}` ADD COLUMN {$col->toSql()}";
-                    break;
-
-                case 'modify':
-                    $statements[] = "ALTER TABLE `{$this->table}` MODIFY COLUMN {$col->toSql()}";
-                    break;
-
-                case 'drop':
-                    $statements[] = "ALTER TABLE `{$this->table}` DROP COLUMN `{$col}`";
-                    break;
-            }
-        }
-
-        foreach ($this->indexes as $idx) {
-            $cols = '`' . implode('`, `', $idx['columns']) . '`';
-            $statements[] = "CREATE INDEX `{$idx['name']}` ON `{$this->table}` ({$cols})";
-        }
-
-        foreach ($this->foreignKeys as $fk) {
-            $sql = "ALTER TABLE `{$this->table}` ADD CONSTRAINT `{$fk['name']}` FOREIGN KEY (`{$fk['column']}`) REFERENCES `{$fk['reference_table']}` (`{$fk['reference_column']}`)";
-
-            if ($fk['on_delete']) {
-                $sql .= " ON DELETE {$fk['on_delete']}";
-            }
-
-            if ($fk['on_update']) {
-                $sql .= " ON UPDATE {$fk['on_update']}";
-            }
-
-            $statements[] = $sql;
-        }
-
-        return $statements;
+        $grammar = GrammarFactory::resolve($this->pdo);
+        return $grammar->compileAlter(
+            $this->table,
+            $this->operations,
+            $this->indexes,
+            $this->foreignKeys
+        );
     }
 
     // ─── Private Helpers ───────────────────────────────────────────────────
