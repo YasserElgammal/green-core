@@ -69,7 +69,9 @@ class FileDriver implements CacheDriverInterface
         $path = $this->getFilePath($key);
 
         if (file_exists($path)) {
-            return @unlink($path);
+            $deleted = @unlink($path);
+            clearstatcache(true, $path);
+            return $deleted;
         }
 
         return false;
