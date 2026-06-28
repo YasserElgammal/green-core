@@ -21,10 +21,13 @@
 12. [Connect Architecture (External HTTP APIs)](#12-connect-architecture-external-http-apis)
 13. [ORM Architecture (Table Gateway & Data Mapper)](#13-orm-architecture-table-gateway--data-mapper)
 14. [Session Management](#14-session-management)
-15. [Extensibility & Service Providers](#15-extensibility--service-providers)
-16. [Performance Optimizations](#16-performance-optimizations)
-17. [View System (Twig Integration)](#17-view-system-twig-integration)
-18. [Security Internals (CSRF)](#18-security-internals-csrf)
+15. [Cache System Architecture](#15-cache-system-architecture)
+16. [Signal Dispatcher (Events)](#16-signal-dispatcher-events)
+17. [Authorization Architecture](#17-authorization-architecture)
+18. [Extensibility & Service Providers](#18-extensibility--service-providers)
+19. [Performance Optimizations](#19-performance-optimizations)
+20. [View System (Twig Integration)](#20-view-system-twig-integration)
+21. [Security Internals (CSRF)](#21-security-internals-csrf)
 
 ---
 
@@ -141,14 +144,18 @@ The router is a lightweight, attribute-driven wrapper around [`nikic/fast-route`
 
 ### Route Registration
 
-Routes are declared directly on controller methods using PHP 8 Attributes:
+Routes are declared directly on controller methods using PHP 8 Attributes. They can also be assigned a unique name for URL generation:
 
 ```php
-#[Route('GET', '/users/{id}', [AuthMiddleware::class])]
+#[Route('GET', '/users/{id}', [AuthMiddleware::class], name: 'users.show')]
 public function show(Request $request, int $id): array
 ```
 
-[`Router::registerRoutesFromController()`](../src/Routing/Router.php) uses `ReflectionClass` to scan controllers for `#[Route]` attributes and registers them with FastRoute.
+[`Router::registerRoutesFromController()`](../src/Routing/Router.php) uses `ReflectionClass` to scan controllers for `#[Route]` attributes, registers them with FastRoute, and tracks named routes.
+
+### URL Generation
+
+The [`UrlGenerator`](../src/Routing/UrlGenerator.php) handles reverse-routing. By calling `route('users.show', ['id' => 5])`, the framework extracts the URI pattern, replaces placeholders, and builds the full URL automatically without hardcoding paths in views.
 
 ### Dispatch Flow
 
@@ -312,7 +319,13 @@ Drive (injectable facade)
 
 ---
 
-## 12. ORM Architecture (Table Gateway & Data Mapper)
+## 12. Connect Architecture (External HTTP APIs)
+
+The framework's `Connect` subsystem provides a standardized wrapper for external HTTP service consumption, built on top of Guzzle. It encourages the use of **Service Objects** to encapsulate API logic.
+
+---
+
+## 13. ORM Architecture (Table Gateway & Data Mapper)
 
 Green implements a database layer that rejects the Active Record pattern in favor of strict separation of concerns.
 
@@ -320,9 +333,14 @@ Green implements a database layer that rejects the Active Record pattern in favo
 
 | Layer | Class | Responsibility |
 |---|---|---|
-| **Data Container** | [`Model`](../src/Database/Model.php) | Pure DTO. Holds state, implements `JsonSerializable`. Contains **zero** database logic. |
+| **Data Container** | [`Model`](../src/Database/Model.php) | Pure DTO. Holds state, tracks `$original` vs `$changes` for dirty tracking, auto-manages `created_at`/`updated_at`, implements `JsonSerializable`. Contains **zero** database logic. |
 | **Persistence** | [`Table`](../src/Database/Table.php) | Table Gateway. Handles all CRUD: `insert`, `update`, `delete`, `fetchById`, `fetchAll`, `paginate`, `include`. |
+| **Connection Pool** | [`ConnectionPool`](../src/Database/ConnectionPool.php) | Manages multiple named DBAL connections concurrently. Allows switching databases seamlessly. |
 | **Query Building** | Doctrine DBAL | `QueryBuilder` for composing SQL. |
+
+### Schema Grammars
+
+To support multiple database systems, Schema compilation is abstracted behind the [`GrammarFactory`](../src/Database/Schema/GrammarFactory.php). Operations like `createTable`, `addColumn`, and `dropTable` are dispatched to a specific Grammar (e.g., `MySqlGrammar`), ensuring SQL compatibility across dialects without bloating the Table layer.
 
 ### Relation Engine & Eager Loading
 
@@ -357,7 +375,7 @@ The resolved closures modify the underlying `QueryBuilder` before the relation i
 
 ---
 
-## 13. Session Management
+## 14. Session Management
 
 The session layer is a thin, ergonomic wrapper around Symfony's `HttpFoundation\Session`.
 
@@ -371,7 +389,74 @@ Flash data uses Symfony's `FlashBag` — values are automatically removed after 
 
 ---
 
-## 14. Extensibility & Service Providers
+## 15. Cache System Architecture
+
+The cache layer uses the **Strategy pattern** to support multiple caching backends.
+
+| Component | Role |
+|---|---|
+| [`CacheManager`](../src/Cache/CacheManager.php) | Central resolver. Reads config, lazy-instantiates drivers (File, Array, Database, Redis). |
+| [`CacheDriverInterface`](../src/Cache/Contracts/CacheDriverInterface.php) | Contract for all stores: `get`, `put`, `forget`, `has`, `flush`. |
+| [`RedisDriver`](../src/Cache/Drivers/RedisDriver.php) | High-performance memory cache utilizing `predis/predis`. |
+
+The manager also provides a powerful `remember()` method that retrieves an item or executes a Closure to compute and store it in a single atomic flow.
+
+---
+
+## 16. Signal Dispatcher (Events)
+
+Green implements a highly decoupled Event Dispatcher known as **Signals**.
+
+### Architecture
+
+```mermaid
+graph LR
+    D[SignalDispatcher] --> L1[Sync Listener]
+    D --> L2[Sync Listener]
+    D --> Q[Async Listener Queue]
+```
+
+- **Attribute-Based Discovery**: Listeners declare their subscriptions natively using `#[Signal('event.name')]`.
+- **Global Helper**: Firing an event is as simple as `dispatch('user.registered', $user)`.
+- **SignalAware**: Classes can implement `SignalAware` to easily emit domain events directly from their core logic.
+
+---
+
+## 17. Authorization Architecture
+
+Authorization is structured around explicit questions and policies, avoiding implicit magic.
+
+### Gate and Policies
+
+| Component | Role |
+|---|---|
+| [`Authorizer`](../src/Auth/Authorizer.php) | The central Gate. You "ask" the Authorizer questions: `$auth->check('update', $post, $user)`. |
+| [`Policy`](../src/Auth/Policy.php) | Domain-specific logic encapsulating authorization rules (e.g., `PostPolicy::update()`). |
+| [`PolicyAttribute`](../src/Auth/PolicyAttribute.php) | Controller method attribute used by the router to enforce an ability before the action runs. |
+
+### Controller Enforcement
+
+Authorization can be explicitly enforced in controllers using Attributes:
+
+```php
+use YasserElgammal\Green\Auth\PolicyAttribute;
+
+#[PolicyAttribute('update', 'post')]
+public function edit(Request $request, int $id)
+```
+The first argument is the ability name. The second argument is the route parameter name or subject string passed to the Authorizer.
+
+If the policy fails, the framework throws a `ForbiddenException` before the controller method executes. The current router integration calls `authorizer()->authorize($ability, $subject)` without an actor, so policies that need the current user should resolve it from the application's auth/session layer until a dedicated actor resolver is added.
+
+Authorization can also be checked explicitly inside controllers:
+
+```php
+authorizer()->authorize('update', $post, $user);
+```
+
+---
+
+## 18. Extensibility & Service Providers
 
 Extensibility in Green is managed primarily through **Service Providers**.
 
@@ -401,36 +486,6 @@ This architecture ensures a clean, predictable bootstrapping phase. Domain manag
 
 ---
 
-## 15. Performance Optimizations
-
-| Optimization | How |
-|---|---|
-| **Lazy Initialization** | Subsystems (DB connection, specific Drive disks, Session) are only instantiated on first use. |
-| **No Reflection on Boot** | Unlike DI containers that scan the codebase at startup, Reflection is only used dynamically on the specific controller method being dispatched. |
-| **ORM Memory Efficiency** | Separating `Model` (lightweight DTO) from `Table` (stateless gateway) keeps the per-object memory footprint minimal. |
-| **O(1) Pluralization** | CLDR plural rules are pure mathematical functions (e.g., `ArabicPluralRule`), not lookup tables. |
-| **Single-Query Eager Loading** | Relations are loaded with `WHERE IN (...)` — one query per relation level, not one per parent row. |
-
----
-
-## 16. View System (Twig Integration)
-
-The framework wraps [`twig/twig`](https://twig.symfony.com/) as its primary templating engine.
-
-| Feature | Implementation |
-|---|---|
-| **Initialization** | [`View::init()`](../src/View/View.php) boots Twig and injects global helpers: `session()`, `t()`, `trans_choice()`, `csrf_token()`, `csrf_field()`. |
-| **CSRF Enforcement** | `View::render()` post-processes rendered HTML. It scans for `<form>` tags with `method="POST/PUT/DELETE"` and throws a hard `RuntimeException` if `{{ csrf_field() }}` is missing — preventing insecure forms from ever shipping. |
-
----
-
-## 17. Security Internals (CSRF)
-
-### Token Lifecycle
-
-```
-Form Render                          Form Submit
-    │                                     │
     ▼                                     ▼
 csrf_field() → CsrfTokenManager     CsrfMiddleware
     │              │                      │

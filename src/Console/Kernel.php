@@ -4,9 +4,13 @@ namespace YasserElgammal\Green\Console;
 
 use YasserElgammal\Green\Console\Commands\{
     ServeCommand,
+    CreateAuthorizerCommand,
     CreateControllerCommand,
+    CreateEventCommand,
+    CreateListenerCommand,
     CreateMigrationCommand,
     CreateModelCommand,
+    CreatePolicyCommand,
     CreateProviderCommand,
     MigrateCommand,
     MigrateRollbackCommand,
@@ -23,8 +27,12 @@ class Kernel
 
     protected array $coreCommands = [
         ServeCommand::class,
+        CreateAuthorizerCommand::class,
         CreateControllerCommand::class,
+        CreateEventCommand::class,
+        CreateListenerCommand::class,
         CreateModelCommand::class,
+        CreatePolicyCommand::class,
         CreateProviderCommand::class,
         CreateMigrationCommand::class,
         MigrateCommand::class,
