@@ -1,0 +1,28 @@
+<?php
+
+namespace {{ namespace }};
+
+use YasserElgammal\Green\Auth\Policy;
+
+class {{ class }} extends Policy
+{
+    public function view(mixed $actor, mixed $subject): bool
+    {
+        return false;
+    }
+
+    public function create(mixed $actor, mixed $subject = null): bool
+    {
+        return false;
+    }
+
+    public function update(mixed $actor, mixed $subject): bool
+    {
+        return false;
+    }
+
+    public function delete(mixed $actor, mixed $subject): bool
+    {
+        return false;
+    }
+}

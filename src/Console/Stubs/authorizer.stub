@@ -1,0 +1,13 @@
+<?php
+
+namespace {{ namespace }};
+
+use YasserElgammal\Green\Auth\Authorizer as BaseAuthorizer;
+
+class {{ class }} extends BaseAuthorizer
+{
+    public function boot(): void
+    {
+        // Register policies and inline abilities here.
+    }
+}
