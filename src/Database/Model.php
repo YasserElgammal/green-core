@@ -17,6 +17,9 @@ abstract class Model implements \JsonSerializable
 
     private array $attributes = [];
 
+    /** Snapshot of attributes at hydration time — used for dirty tracking */
+    private array $original = [];
+
     public function __construct(array $attributes = [])
     {
         $this->fill($attributes);
@@ -54,6 +57,62 @@ abstract class Model implements \JsonSerializable
     public function __isset(string $key): bool
     {
         return isset($this->attributes[$key]);
+    }
+
+    // ─── Dirty Tracking ───────────────────────────────────────────────────────
+
+    /**
+     * Sync the original attributes with the current state.
+     * Called after hydration and after persistence to reset dirty state.
+     */
+    public function syncOriginal(): static
+    {
+        $this->original = $this->attributes;
+        return $this;
+    }
+
+    /**
+     * Get only the attributes that have changed since the last sync.
+     */
+    public function getDirty(): array
+    {
+        $dirty = [];
+        foreach ($this->attributes as $key => $value) {
+            if (str_starts_with($key, '_')) {
+                continue; // Skip meta keys
+            }
+            if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
+                $dirty[$key] = $value;
+            }
+        }
+        return $dirty;
+    }
+
+    /**
+     * Check if the model (or a specific attribute) has been modified.
+     */
+    public function isDirty(?string $key = null): bool
+    {
+        if ($key !== null) {
+            return ($this->attributes[$key] ?? null) !== ($this->original[$key] ?? null);
+        }
+        return !empty($this->getDirty());
+    }
+
+    /**
+     * Check if the model (or a specific attribute) is unchanged.
+     */
+    public function isClean(?string $key = null): bool
+    {
+        return !$this->isDirty($key);
+    }
+
+    /**
+     * Get the original value of an attribute before modification.
+     */
+    public function getOriginal(string $key, mixed $default = null): mixed
+    {
+        return $this->original[$key] ?? $default;
     }
 
     // ─── Serialization ────────────────────────────────────────────────────────

@@ -74,9 +74,20 @@ class Table
      */
     protected array $relations = [];
 
+    /**
+     * The named database connection to use.
+     * Null means the default connection from the ConnectionPool.
+     */
+    protected ?string $connectionName = null;
+
+    /**
+     * Indicates if the model should be timestamped.
+     */
+    protected bool $timestamps = true;
+
     public function __construct(private readonly Model $blueprint)
     {
-        $this->connection  = Database::getConnection();
+        $this->connection  = Database::getConnection($this->connectionName);
         $this->table       = $blueprint->getTable();
         $this->primaryKey  = $blueprint->getPrimaryKey();
     }
@@ -586,7 +597,7 @@ class Table
 
     private function hydrate(array $rows): array
     {
-        return array_map(fn($row) => (clone $this->blueprint)->fill($row), $rows);
+        return array_map(fn($row) => (clone $this->blueprint)->fill($row)->syncOriginal(), $rows);
     }
 
     // ─── Fetch ────────────────────────────────────────────────────────────────
@@ -710,9 +721,15 @@ class Table
      */
     public function insert(array $data): Model
     {
+        if ($this->timestamps) {
+            $now = date('Y-m-d H:i:s');
+            $data['created_at'] ??= $now;
+            $data['updated_at'] ??= $now;
+        }
+
         $this->connection->insert($this->table, $data);
         $data[$this->primaryKey] = (int) $this->connection->lastInsertId();
-        return (clone $this->blueprint)->fill($data);
+        return (clone $this->blueprint)->fill($data)->syncOriginal();
     }
 
     /**
@@ -723,16 +740,39 @@ class Table
         $pk = $this->primaryKey;
 
         if ($model->hasPrimaryKey()) {
+            if ($model->isClean()) {
+                return $model; // Nothing to update
+            }
+
             $id   = $model->getPrimaryKeyValue();
-            $data = $model->toArray();
+            $data = $model->getDirty();
+
+            if ($this->timestamps) {
+                $data['updated_at'] = date('Y-m-d H:i:s');
+                $model->set('updated_at', $data['updated_at']);
+            }
+
             unset($data[$pk]);
-            $this->connection->update($this->table, $data, [$pk => $id]);
+
+            if (!empty($data)) {
+                $this->connection->update($this->table, $data, [$pk => $id]);
+            }
         } else {
-            $this->connection->insert($this->table, $model->toArray());
+            $data = $model->toArray();
+
+            if ($this->timestamps) {
+                $now = date('Y-m-d H:i:s');
+                $data['created_at'] ??= $now;
+                $data['updated_at'] ??= $now;
+                $model->set('created_at', $data['created_at']);
+                $model->set('updated_at', $data['updated_at']);
+            }
+
+            $this->connection->insert($this->table, $data);
             $model->set($pk, (int) $this->connection->lastInsertId());
         }
 
-        return $model;
+        return $model->syncOriginal();
     }
 
     /**
