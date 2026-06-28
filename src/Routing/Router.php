@@ -7,12 +7,14 @@ use FastRoute\Dispatcher;
 use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Http\JsonResponse;
+use YasserElgammal\Green\Auth\PolicyAttribute;
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
 
 class Router
 {
     protected array $routes = [];
+    protected array $namedRoutes = [];
     protected array $globalMiddleware = [];
     private ?string $routeCacheFile = null;
     private bool $routeCacheDisabled = true;
@@ -43,6 +45,11 @@ class Router
         return $this;
     }
 
+    public function getNamedRoute(string $name): ?string
+    {
+        return $this->namedRoutes[$name] ?? null;
+    }
+
     public function cacheRoutes(?string $cacheFile = null): void
     {
         $cacheFile ??= $this->routeCacheFile ?? RouteCache::defaultPath();
@@ -66,6 +73,10 @@ class Router
                 /** @var Route $route */
                 $route = $attribute->newInstance();
 
+                if ($route->name) {
+                    $this->namedRoutes[$route->name] = $route->path;
+                }
+
                 $httpMethods = is_array($route->method) ? $route->method : [$route->method];
                 foreach ($httpMethods as $httpMethod) {
                     $this->routes[] = [
@@ -82,7 +93,6 @@ class Router
     public function dispatch(Request $request): Response
     {
         $dispatcher = $this->makeDispatcher();
-
         $routeInfo = $dispatcher->dispatch($request->getMethod(), $request->getPath());
 
         switch ($routeInfo[0]) {
@@ -144,6 +154,22 @@ class Router
             $controller = $this->controllerResolver->resolve($controllerClass);
 
             $reflectionMethod = new \ReflectionMethod($controllerClass, $method);
+
+            // Check for #[Policy] attributes
+            $policyAttributes = $reflectionMethod->getAttributes(PolicyAttribute::class);
+            if (!empty($policyAttributes)) {
+                $authorizer = authorizer();
+                // Assume the actor is null or could be retrieved from request or auth manager.
+                // Since Green doesn't seem to have a standard Auth manager yet, we pass null as actor.
+                // The policy logic can fetch from session() if needed, or actor can be extended later.
+                foreach ($policyAttributes as $attribute) {
+                    /** @var PolicyAttribute $policy */
+                    $policy = $attribute->newInstance();
+                    $subject = $vars[$policy->subject] ?? $policy->subject;
+                    $authorizer->authorize($policy->ability, $subject);
+                }
+            }
+
             $args = [];
             foreach ($reflectionMethod->getParameters() as $param) {
                 $type = $param->getType();
