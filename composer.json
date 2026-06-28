@@ -33,7 +33,8 @@
         "symfony/mailer": "^7.4",
         "symfony/mime": "^7.4",
         "doctrine/dbal": "^4.4",
-        "symfony/console": "^7.4"
+        "symfony/console": "^7.4",
+        "predis/predis": "^3.5"
     },
     "require-dev": {
         "phpunit/phpunit": "^12.5"
