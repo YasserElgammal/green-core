@@ -15,7 +15,8 @@ class Route
     public function __construct(
         public string|array $method,
         public string $path,
-        public array $middleware = []
+        public array $middleware = [],
+        public ?string $name = null
     ) {
     }
 }

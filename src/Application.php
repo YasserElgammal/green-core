@@ -52,6 +52,10 @@ class Application extends Container
             \YasserElgammal\Green\Providers\RoutingServiceProvider::class,
             \YasserElgammal\Green\Providers\ValidationServiceProvider::class,
             \YasserElgammal\Green\Providers\ViewServiceProvider::class,
+            \YasserElgammal\Green\Providers\SignalServiceProvider::class,
+            \YasserElgammal\Green\Providers\AuthServiceProvider::class,
+            \YasserElgammal\Green\Providers\DatabaseServiceProvider::class,
+            \YasserElgammal\Green\Providers\CacheServiceProvider::class,
         ];
 
         foreach ($providers as $provider) {

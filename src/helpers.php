@@ -22,6 +22,9 @@ use YasserElgammal\Green\Debug\DumpContext;
 use YasserElgammal\Green\Debug\Dumper;
 use YasserElgammal\Green\Debug\Renderers\CliRenderer;
 use YasserElgammal\Green\Debug\Renderers\HtmlRenderer;
+use YasserElgammal\Green\Signal\SignalDispatcher;
+use YasserElgammal\Green\Auth\Authorizer;
+use YasserElgammal\Green\Cache\CacheManager;
 
 $GLOBALS['__green_started_at'] ??= $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
 
@@ -313,5 +316,99 @@ if (!function_exists('connect')) {
             throw new \RuntimeException('Connect has not been initialized.');
         }
         return $connect;
+    }
+}
+
+// ─── Phase 3: Signal Dispatcher ──────────────────────────────────────────────
+
+if (!function_exists('signal_set_instance')) {
+    function signal_set_instance(SignalDispatcher $dispatcher): void
+    {
+        static $stored = false;
+        if (!$stored) {
+            $GLOBALS['__green_signal_instance'] = $dispatcher;
+            $stored = true;
+        }
+    }
+}
+
+if (!function_exists('signal')) {
+    function signal(): SignalDispatcher
+    {
+        $signal = $GLOBALS['__green_signal_instance'] ?? null;
+        if (!$signal instanceof SignalDispatcher) {
+            throw new \RuntimeException('Signal Dispatcher has not been initialized.');
+        }
+        return $signal;
+    }
+}
+
+// ─── Phase 3: Authorizer ─────────────────────────────────────────────────────
+
+if (!function_exists('authorizer_set_instance')) {
+    function authorizer_set_instance(Authorizer $authorizer): void
+    {
+        static $stored = false;
+        if (!$stored) {
+            $GLOBALS['__green_authorizer_instance'] = $authorizer;
+            $stored = true;
+        }
+    }
+}
+
+if (!function_exists('authorizer')) {
+    function authorizer(): Authorizer
+    {
+        $authorizer = $GLOBALS['__green_authorizer_instance'] ?? null;
+        if (!$authorizer instanceof Authorizer) {
+            throw new \RuntimeException('Authorizer has not been initialized.');
+        }
+        return $authorizer;
+    }
+}
+
+// ─── Phase 3: Cache Manager ──────────────────────────────────────────────────
+
+if (!function_exists('cache_set_instance')) {
+    function cache_set_instance(CacheManager $manager): void
+    {
+        static $stored = false;
+        if (!$stored) {
+            $GLOBALS['__green_cache_instance'] = $manager;
+            $stored = true;
+        }
+    }
+}
+
+if (!function_exists('cache')) {
+    function cache(): CacheManager
+    {
+        $cache = $GLOBALS['__green_cache_instance'] ?? null;
+        if (!$cache instanceof CacheManager) {
+            throw new \RuntimeException('CacheManager has not been initialized.');
+        }
+        return $cache;
+    }
+}
+
+// ─── Phase 3: URL Generation ─────────────────────────────────────────────────
+
+if (!function_exists('route')) {
+    /**
+     * Generate the URL to a named route.
+     *
+     * @param string $name
+     * @param array $parameters
+     * @return string
+     */
+    function route(string $name, array $parameters = []): string
+    {
+        /** @var \YasserElgammal\Green\Routing\Router $router */
+        $router = app(\YasserElgammal\Green\Routing\Router::class);
+        /** @var \YasserElgammal\Green\Http\Request $request */
+        $request = app(\YasserElgammal\Green\Http\Request::class);
+
+        $generator = new \YasserElgammal\Green\Routing\UrlGenerator($router, $request);
+        return $generator->route($name, $parameters);
     }
 }

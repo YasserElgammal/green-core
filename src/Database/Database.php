@@ -8,32 +8,51 @@ use Doctrine\DBAL\DriverManager;
 /**
  * Manages the Doctrine DBAL connection as a singleton.
  *
+ * Now delegates to ConnectionPool for multi-connection support.
+ * The static API is preserved for backward compatibility.
+ *
  * A custom connection can be injected via setConnection()
  * to support in-memory SQLite databases during testing.
  */
 class Database
 {
-    private static ?Connection $connection = null;
+    private static ?ConnectionPool $pool = null;
+
+    /** @deprecated Use ConnectionPool directly */
+    private static ?Connection $legacyConnection = null;
 
     /**
-     * Return the active connection, creating it from .env if needed.
+     * Return the active connection, creating it from pool or env if needed.
      */
-    public static function getConnection(): Connection
+    public static function getConnection(?string $name = null): Connection
     {
-        if (self::$connection === null) {
-            $connectionParams = [
-                'dbname'   => $_ENV['DB_NAME']     ?? 'green_framework',
-                'user'     => $_ENV['DB_USER']     ?? 'root',
-                'password' => $_ENV['DB_PASSWORD'] ?? '',
-                'host'     => $_ENV['DB_HOST']     ?? '127.0.0.1',
-                'port'     => (int) ($_ENV['DB_PORT'] ?? 3306),
-                'driver'   => $_ENV['DB_DRIVER']   ?? 'pdo_mysql',
-            ];
-
-            self::$connection = DriverManager::getConnection($connectionParams);
+        // Legacy override takes priority (for tests using setConnection)
+        if ($name === null && self::$legacyConnection !== null) {
+            return self::$legacyConnection;
         }
 
-        return self::$connection;
+        return static::getPool()->connection($name);
+    }
+
+    /**
+     * Get the ConnectionPool instance.
+     */
+    public static function getPool(): ConnectionPool
+    {
+        if (static::$pool === null) {
+            // Fallback: build pool from env vars (backward compat)
+            static::$pool = ConnectionPool::fromEnvironment();
+        }
+
+        return static::$pool;
+    }
+
+    /**
+     * Set the ConnectionPool instance (called by DatabaseServiceProvider).
+     */
+    public static function setPool(ConnectionPool $pool): void
+    {
+        static::$pool = $pool;
     }
 
     /**
@@ -43,6 +62,6 @@ class Database
      */
     public static function setConnection(?Connection $connection): void
     {
-        self::$connection = $connection;
+        self::$legacyConnection = $connection;
     }
 }
