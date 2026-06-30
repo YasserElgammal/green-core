@@ -19,6 +19,7 @@ class PublishConfigCommand extends BaseCommand
         'csrf' => 'config.csrf',
         'drive' => 'config.drive',
         'leaf' => 'config.leaf',
+        'rate_limit' => 'config.rate_limit',
     ];
 
     protected function configure(): void
@@ -26,7 +27,7 @@ class PublishConfigCommand extends BaseCommand
         $this
             ->setName('publish:config')
             ->setDescription('Publish a Green Framework configuration file')
-            ->addArgument('name', InputArgument::REQUIRED, 'The config name to publish, e.g. leaf, csrf, connect, or drive')
+            ->addArgument('name', InputArgument::REQUIRED, 'The config name to publish, e.g. leaf, csrf, connect, drive, or rate_limit')
             ->addOption('force', 'f', InputOption::VALUE_NONE, 'Overwrite the config file if it already exists');
     }
 

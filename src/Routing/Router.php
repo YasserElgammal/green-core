@@ -25,6 +25,10 @@ class Router
     ) {
     }
 
+    public function aliasMiddleware(string $name, string|object|callable $middleware): void
+    {
+        $this->middlewareResolver->alias($name, $middleware);
+    }
     public function addGlobalMiddleware(string|object $middleware): void
     {
         $this->globalMiddleware[] = $middleware;
@@ -207,11 +211,28 @@ class Router
         foreach (array_reverse($middlewares) as $middlewareItem) {
             $next = $pipeline;
             $pipeline = function ($req) use ($middlewareItem, $next) {
-                $middleware = $this->middlewareResolver->resolve($middlewareItem);
+                [$name, $parameters] = $this->resolveMiddlewareItem($middlewareItem);
+                $middleware = $this->middlewareResolver->resolve($name, $parameters);
                 return $middleware->handle($req, $next);
             };
         }
 
         return $pipeline($request);
     }
+    private function resolveMiddlewareItem(string|object $middleware): array
+    {
+        if (is_object($middleware)) {
+            return [$middleware, []];
+        }
+
+        if (!str_contains($middleware, ':')) {
+            return [$middleware, []];
+        }
+
+        [$name, $parameterString] = explode(':', $middleware, 2);
+        $parameters = $parameterString === '' ? [] : array_map('trim', explode(',', $parameterString));
+
+        return [$name, $parameters];
+    }
 }
+
