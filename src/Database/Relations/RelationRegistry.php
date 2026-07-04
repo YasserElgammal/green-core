@@ -23,6 +23,9 @@ class RelationRegistry
         'belongsTo'   => BelongsToLoader::class,
     ];
 
+    /** @var array<string, RelationLoader> Cached loader instances */
+    private static array $instances = [];
+
     /**
      * Resolve a loader instance for the given relation type.
      *
@@ -37,7 +40,7 @@ class RelationRegistry
             );
         }
 
-        return new self::$loaders[$type]();
+        return self::$instances[$type] ??= new self::$loaders[$type]();
     }
 
     /**
@@ -55,6 +58,7 @@ class RelationRegistry
         }
 
         self::$loaders[$type] = $loader;
+        unset(self::$instances[$type]); // Clear cached instance if re-registered
     }
 
     /**

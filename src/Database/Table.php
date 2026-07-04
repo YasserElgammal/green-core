@@ -588,6 +588,32 @@ class Table
         return $models;
     }
 
+    // ─── Fluent Helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Apply a callback to the Table chain if a given condition is true.
+     */
+    public function when(mixed $value, callable $callback, ?callable $default = null): static
+    {
+        if ($value) {
+            $callback($this, $value);
+        } elseif ($default) {
+            $default($this, $value);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Tap the Table chain to perform an action on the Table instance.
+     */
+    public function tap(callable $callback): static
+    {
+        $callback($this);
+
+        return $this;
+    }
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
     private function newQuery(): QueryBuilder
