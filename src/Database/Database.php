@@ -3,7 +3,6 @@
 namespace YasserElgammal\Green\Database;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 
 /**
  * Manages the Doctrine DBAL connection as a singleton.
@@ -18,7 +17,7 @@ class Database
 {
     private static ?ConnectionPool $pool = null;
 
-    /** @deprecated Use ConnectionPool directly */
+    /** @deprecated Backward-compatible override; use ConnectionPool directly. */
     private static ?Connection $legacyConnection = null;
 
     /**
@@ -45,6 +44,30 @@ class Database
         }
 
         return static::$pool;
+    }
+
+    /**
+     * Run the callback inside a database transaction.
+     *
+     * @template TReturn
+     * @param callable(): TReturn $callback
+     * @return TReturn
+     *
+     * @throws \Throwable
+     */
+    public static function transaction(callable $callback, ?string $connection = null): mixed
+    {
+        $db = static::getConnection($connection);
+        $db->beginTransaction();
+
+        try {
+            $result = $callback();
+            $db->commit();
+            return $result;
+        } catch (\Throwable $exception) {
+            $db->rollBack();
+            throw $exception;
+        }
     }
 
     /**

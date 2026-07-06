@@ -4,6 +4,11 @@ namespace {{ namespace }};
 
 use YasserElgammal\Green\Database\Model;
 
+/**
+ * Data container for rows in the {{ table }} table.
+ *
+ * Persistence lives in the matching Table class, not on the model.
+ */
 class {{ class }} extends Model
 {
     protected string $table = '{{ table }}';

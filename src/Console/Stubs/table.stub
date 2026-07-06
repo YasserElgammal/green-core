@@ -1,0 +1,24 @@
+<?php
+
+namespace {{ namespace }};
+
+use App\Models\{{ model }};
+use YasserElgammal\Green\Database\Table;
+
+/**
+ * @extends Table<{{ model }}>
+ */
+class {{ class }} extends Table
+{
+    /**
+     * Define eager-loadable relations for this table.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    protected array $relations = [];
+
+    public function __construct()
+    {
+        parent::__construct(new {{ model }}());
+    }
+}

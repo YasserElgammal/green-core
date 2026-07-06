@@ -338,6 +338,34 @@ Green implements a database layer that rejects the Active Record pattern in favo
 | **Connection Pool** | [`ConnectionPool`](../src/Database/ConnectionPool.php) | Manages multiple named DBAL connections concurrently. Allows switching databases seamlessly. |
 | **Query Building** | Doctrine DBAL | `QueryBuilder` for composing SQL. |
 
+### Fluent Query Layer
+
+`Table::query()` returns [`GreenQuery`](../src/Database/Query/GreenQuery.php), a small wrapper around Doctrine DBAL's `QueryBuilder`. It keeps model hydration and eager-loading in the Table Gateway while giving application code a concise query surface:
+
+```php
+$users = $userTable->query()
+    ->where('status', 'active')
+    ->whereGroup(fn ($query) => $query
+        ->where('role', 'admin')
+        ->orWhere('score', '>=', 90)
+    )
+    ->latest()
+    ->fetch();
+```
+
+The query layer is split into traits by responsibility:
+
+| Trait | Responsibility |
+|---|---|
+| [`BuildsConditions`](../src/Database/Query/Traits/BuildsConditions.php) | `where`, `orWhere`, grouped conditions, list/null/range/like helpers. |
+| [`OrdersQuery`](../src/Database/Query/Traits/OrdersQuery.php) | `orderBy`, `latest`, `oldest`, `limit`, `offset`. |
+| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `first`, `firstRequired`. |
+| [`RunsAggregates`](../src/Database/Query/Traits/RunsAggregates.php) | `count`, `exists`, `sum`, `avg`, `min`, `max`. |
+
+Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()`, so pending eager loads and model hydration remain centralized in the Table Gateway.
+
+See [Database Querying](database-querying.md) for the user-facing API reference.
+
 ### Schema Grammars
 
 To support multiple database systems, Schema compilation is abstracted behind the [`GrammarFactory`](../src/Database/Schema/GrammarFactory.php). Operations like `createTable`, `addColumn`, and `dropTable` are dispatched to a specific Grammar (e.g., `MySqlGrammar`), ensuring SQL compatibility across dialects without bloating the Table layer.
