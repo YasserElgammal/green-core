@@ -1,0 +1,50 @@
+<?php
+
+/**
+ * Rate Limiting Configuration
+ *
+ * These settings control Green's throttle middleware. Publish this file into
+ * an application when you need to override the default rate limit storage or
+ * default throttle values.
+ *
+ * @see \YasserElgammal\Green\Routing\RateLimiter
+ * @see \YasserElgammal\Green\Http\Middleware\ThrottleRequests
+ */
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limit Storage Driver
+    |--------------------------------------------------------------------------
+    |
+    | Supported drivers: "file", "array". The array driver is mainly useful
+    | for tests; the file driver is suitable for local and simple deployments.
+    |
+    */
+    'driver' => $_ENV['RATE_LIMIT_DRIVER'] ?? getenv('RATE_LIMIT_DRIVER') ?: 'file',
+
+    /*
+    |--------------------------------------------------------------------------
+    | File Storage Path
+    |--------------------------------------------------------------------------
+    |
+    | The file driver stores counters under this directory.
+    |
+    */
+    'path' => (defined('BASE_PATH') ? rtrim(BASE_PATH, '/\\') : getcwd()) . '/storage/framework/cache/rate-limit',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Default Limits
+    |--------------------------------------------------------------------------
+    |
+    | Used when a throttle alias does not pass explicit max attempts or decay.
+    |
+    */
+    'defaults' => [
+        'max_attempts' => 60,
+        'decay_minutes' => 1,
+    ],
+
+];

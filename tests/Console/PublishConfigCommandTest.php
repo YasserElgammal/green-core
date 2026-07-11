@@ -79,6 +79,20 @@ class PublishConfigCommandTest extends TestCase
         $this->assertStringContainsString("'root'   => __DIR__ . '/../public'", $contents);
     }
 
+
+    public function test_it_publishes_rate_limit_config(): void
+    {
+        $tester = new CommandTester(new PublishConfigCommand());
+
+        $exitCode = $tester->execute(['name' => 'rate_limit']);
+        $contents = file_get_contents($this->projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'rate_limit.php');
+
+        $this->assertSame(0, $exitCode);
+        $this->assertFileExists($this->projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'rate_limit.php');
+        $this->assertStringContainsString('Rate Limiting Configuration', $contents);
+        $this->assertStringContainsString("'driver' => \$_ENV['RATE_LIMIT_DRIVER']", $contents);
+        $this->assertStringContainsString("'max_attempts' => 60", $contents);
+    }
     public function test_it_does_not_overwrite_existing_config_without_force(): void
     {
         $configPath = $this->projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'leaf.php';
@@ -113,7 +127,7 @@ class PublishConfigCommandTest extends TestCase
         $exitCode = $tester->execute(['name' => 'missing']);
 
         $this->assertSame(1, $exitCode);
-        $this->assertStringContainsString('Available configs: connect, csrf, drive, leaf', $tester->getDisplay());
+        $this->assertStringContainsString('Available configs: connect, csrf, drive, leaf, rate_limit', $tester->getDisplay());
     }
 
     private function removeDirectory(string $path): void

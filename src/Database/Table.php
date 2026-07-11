@@ -9,6 +9,7 @@ use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
 use YasserElgammal\Green\Database\IncludeQuery\IncludeQueryEngine;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedAggregation;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedInclude;
+use YasserElgammal\Green\Database\Query\GreenQuery;
 use YasserElgammal\Green\Database\Relations\RelationRegistry;
 use YasserElgammal\Green\Pagination\Paginator;
 
@@ -21,6 +22,8 @@ use YasserElgammal\Green\Pagination\Paginator;
  *   - Data Mapper  (hydration)
  *   - Fluent Interface (query building + include chaining)
  *   - Strategy  (relation loaders via RelationRegistry)
+ *
+ * @template TModel of Model
  */
 class Table
 {
@@ -85,6 +88,9 @@ class Table
      */
     protected bool $timestamps = true;
 
+    /**
+     * @param TModel $blueprint
+     */
     public function __construct(private readonly Model $blueprint)
     {
         $this->connection  = Database::getConnection($this->connectionName);
@@ -588,6 +594,42 @@ class Table
         return $models;
     }
 
+    // ─── Fluent Helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Apply a callback to the Table chain if a given condition is true.
+     */
+    public function when(mixed $value, callable $callback, ?callable $default = null): static
+    {
+        if ($value) {
+            $callback($this, $value);
+        } elseif ($default) {
+            $default($this, $value);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Tap the Table chain to perform an action on the Table instance.
+     */
+    public function tap(callable $callback): static
+    {
+        $callback($this);
+
+        return $this;
+    }
+
+    /**
+     * Start a Green fluent query for this table.
+     *
+     * @return GreenQuery<TModel>
+     */
+    public function query(): GreenQuery
+    {
+        return new GreenQuery($this, $this->builder());
+    }
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
     private function newQuery(): QueryBuilder
@@ -602,6 +644,9 @@ class Table
 
     // ─── Fetch ────────────────────────────────────────────────────────────────
 
+    /**
+     * @return array<int, TModel>
+     */
     public function fetchAll(): array
     {
         $rows = $this->newQuery()
@@ -612,6 +657,19 @@ class Table
         return $this->loadIncludes($this->hydrate($rows));
     }
 
+    /**
+     * Alias for fetchAll().
+     *
+     * @return array<int, TModel>
+     */
+    public function all(): array
+    {
+        return $this->fetchAll();
+    }
+
+    /**
+     * @return TModel|null
+     */
     public function fetchById(int|string $id): ?Model
     {
         $row = $this->newQuery()
@@ -629,6 +687,19 @@ class Table
         return $models[0];
     }
 
+    /**
+     * Alias for fetchById().
+     *
+     * @return TModel|null
+     */
+    public function find(int|string $id): ?Model
+    {
+        return $this->fetchById($id);
+    }
+
+    /**
+     * @return TModel
+     */
     public function fetchByIdOrFail(int|string $id): Model
     {
         $model = $this->fetchById($id);
@@ -640,6 +711,19 @@ class Table
         return $model;
     }
 
+    /**
+     * Green-style required lookup alias for fetchByIdOrFail().
+     *
+     * @return TModel
+     */
+    public function findRequired(int|string $id): Model
+    {
+        return $this->fetchByIdOrFail($id);
+    }
+
+    /**
+     * @return array<int, TModel>
+     */
     public function fetchWhere(string $column, mixed $value): array
     {
         $rows = $this->newQuery()
@@ -652,6 +736,9 @@ class Table
         return $this->loadIncludes($this->hydrate($rows));
     }
 
+    /**
+     * @return TModel|null
+     */
     public function fetchFirst(string $column, mixed $value): ?Model
     {
         $row = $this->newQuery()
@@ -697,6 +784,8 @@ class Table
 
     /**
      * Run a raw builder and get back hydrated model instances (with includes).
+     *
+     * @return array<int, TModel>
      */
     public function fetchFromBuilder(QueryBuilder $qb): array
     {
@@ -706,10 +795,10 @@ class Table
     /**
      * Paginate results from a raw QueryBuilder instance.
      */
-    public function paginateFromBuilder(QueryBuilder $qb, int $perPage = 15, int $page = 1): array
+    public function paginateFromBuilder(QueryBuilder $qb, int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
         $paginator     = new Paginator();
-        $result        = $paginator->paginate($qb, $perPage, $page);
+        $result        = $paginator->paginate($qb, $perPage, $page, $withCount);
         $result['data'] = $this->loadIncludes($this->hydrate($result['data']));
         return $result;
     }
@@ -815,10 +904,10 @@ class Table
      * Returns ['data' => Model[], 'meta' => [...]] where data contains
      * hydrated Model instances with all pending includes loaded.
      */
-    public function paginate(int $perPage = 15, int $page = 1): array
+    public function paginate(int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
         $paginator = new Paginator();
-        $result    = $paginator->paginate($this->builder(), $perPage, $page);
+        $result    = $paginator->paginate($this->builder(), $perPage, $page, $withCount);
 
         // Hydrate raw rows into Model instances and load includes
         $models        = $this->loadIncludes($this->hydrate($result['data']));

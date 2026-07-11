@@ -2,12 +2,10 @@
 
 namespace YasserElgammal\Green\Routing;
 
-use FastRoute\RouteCollector;
 use FastRoute\Dispatcher;
+use FastRoute\RouteCollector;
 use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
-use YasserElgammal\Green\Http\JsonResponse;
-use YasserElgammal\Green\Auth\PolicyAttribute;
 use function FastRoute\cachedDispatcher;
 use function FastRoute\simpleDispatcher;
 
@@ -22,7 +20,14 @@ class Router
     public function __construct(
         private readonly ControllerResolver $controllerResolver = new ControllerResolver(),
         private readonly MiddlewareResolver $middlewareResolver = new MiddlewareResolver(),
+        private readonly ?RouteInvoker $routeInvoker = null,
+        private readonly ?MiddlewarePipeline $middlewarePipeline = null,
     ) {
+    }
+
+    public function aliasMiddleware(string $name, string|object|callable $middleware): void
+    {
+        $this->middlewareResolver->alias($name, $middleware);
     }
 
     public function addGlobalMiddleware(string|object $middleware): void
@@ -83,7 +88,7 @@ class Router
                         'method' => strtoupper($httpMethod),
                         'path' => $route->path,
                         'handler' => [$controllerClass, $method->getName()],
-                        'middleware' => $route->middleware
+                        'middleware' => $route->middleware,
                     ];
                 }
             }
@@ -94,27 +99,23 @@ class Router
     {
         $dispatcher = $this->makeDispatcher();
         $routeInfo = $dispatcher->dispatch($request->getMethod(), $request->getPath());
+        $response = null;
 
         switch ($routeInfo[0]) {
             case Dispatcher::NOT_FOUND:
-                return new Response('404 Not Found', 404);
+                $response = new Response('404 Not Found', 404);
+                break;
             case Dispatcher::METHOD_NOT_ALLOWED:
-                return new Response('405 Method Not Allowed', 405);
+                $response = new Response('405 Method Not Allowed', 405);
+                break;
             case Dispatcher::FOUND:
-                $handlerInfo = $routeInfo[1];
-                $vars = $routeInfo[2];
-                $handler = $handlerInfo['handler'];
-                $routeMiddleware = $handlerInfo['middleware'];
-
-                foreach ($vars as $key => $value) {
-                    $request->setAttribute($key, $value);
-                }
-
-                $middlewares = array_merge($this->globalMiddleware, $routeMiddleware);
-                return $this->runPipeline($middlewares, $request, $handler, $vars);
+                $response = $this->dispatchMatchedRoute($request, $routeInfo[1], $routeInfo[2]);
+                break;
+            default:
+                $response = new Response('500 Internal Server Error', 500);
         }
 
-        return new Response('500 Internal Server Error', 500);
+        return $response;
     }
 
     private function makeDispatcher(): Dispatcher
@@ -141,77 +142,56 @@ class Router
         foreach ($this->routes as $route) {
             $collector->addRoute($route['method'], $route['path'], [
                 'handler' => $route['handler'],
-                'middleware' => $route['middleware']
+                'middleware' => $route['middleware'],
             ]);
         }
     }
 
-    protected function runPipeline(array $middlewares, Request $request, array $handler, array $vars): Response
+    /**
+     * @param array{handler: array{0: class-string, 1: string}, middleware: array<int, string|object>} $handlerInfo
+     * @param array<string, mixed> $vars
+     */
+    private function dispatchMatchedRoute(Request $request, array $handlerInfo, array $vars): Response
     {
-        $pipeline = function ($req) use ($handler, $vars) {
-            $controllerClass = $handler[0];
-            $method = $handler[1];
-            $controller = $this->controllerResolver->resolve($controllerClass);
+        $handler = $handlerInfo['handler'];
 
-            $reflectionMethod = new \ReflectionMethod($controllerClass, $method);
-
-            // Check for #[Policy] attributes
-            $policyAttributes = $reflectionMethod->getAttributes(PolicyAttribute::class);
-            if (!empty($policyAttributes)) {
-                $authorizer = authorizer();
-                // Assume the actor is null or could be retrieved from request or auth manager.
-                // Since Green doesn't seem to have a standard Auth manager yet, we pass null as actor.
-                // The policy logic can fetch from session() if needed, or actor can be extended later.
-                foreach ($policyAttributes as $attribute) {
-                    /** @var PolicyAttribute $policy */
-                    $policy = $attribute->newInstance();
-                    $subject = $vars[$policy->subject] ?? $policy->subject;
-                    $authorizer->authorize($policy->ability, $subject);
-                }
-            }
-
-            $args = [];
-            foreach ($reflectionMethod->getParameters() as $param) {
-                $type = $param->getType();
-                if ($type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
-                    $typeName = $type->getName();
-                    if ($typeName === Request::class) {
-                        $args[] = $req;
-                    } elseif (is_subclass_of($typeName, \YasserElgammal\Green\Http\Payload::class)) {
-                        $args[] = new $typeName($req);
-                    } else {
-                        $args[] = null;
-                    }
-                } elseif (array_key_exists($param->getName(), $vars)) {
-                    $args[] = $vars[$param->getName()];
-                } else {
-                    $args[] = null;
-                }
-            }
-
-            $response = $controller->$method(...$args);
-
-            if (is_array($response)) {
-                return new JsonResponse($response);
-            }
-            if ($response instanceof Response) {
-                return $response;
-            }
-            if (is_string($response) || is_numeric($response)) {
-                return new Response((string)$response);
-            }
-
-            return new Response('', 200);
-        };
-
-        foreach (array_reverse($middlewares) as $middlewareItem) {
-            $next = $pipeline;
-            $pipeline = function ($req) use ($middlewareItem, $next) {
-                $middleware = $this->middlewareResolver->resolve($middlewareItem);
-                return $middleware->handle($req, $next);
-            };
+        foreach ($vars as $key => $value) {
+            $request->setAttribute($key, $value);
         }
 
-        return $pipeline($request);
+        $request->setAttribute('__green_route_handler', $handler);
+        $request->setAttribute('__green_route_vars', $vars);
+
+        $middlewares = array_merge(
+            $this->globalMiddleware,
+            $handlerInfo['middleware'],
+            [new PolicyMiddleware()]
+        );
+
+        return $this->runPipeline($middlewares, $request, $handler, $vars);
+    }
+
+    /**
+     * @param array<int, string|object> $middlewares
+     * @param array{0: class-string, 1: string} $handler
+     * @param array<string, mixed> $vars
+     */
+    protected function runPipeline(array $middlewares, Request $request, array $handler, array $vars): Response
+    {
+        return $this->pipeline()->send(
+            $request,
+            $middlewares,
+            fn(Request $request): Response => $this->invoker()->invoke($handler, $request, $vars)
+        );
+    }
+
+    private function invoker(): RouteInvoker
+    {
+        return $this->routeInvoker ?? new RouteInvoker($this->controllerResolver);
+    }
+
+    private function pipeline(): MiddlewarePipeline
+    {
+        return $this->middlewarePipeline ?? new MiddlewarePipeline($this->middlewareResolver);
     }
 }
