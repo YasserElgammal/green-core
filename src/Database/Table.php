@@ -10,6 +10,7 @@ use YasserElgammal\Green\Database\IncludeQuery\IncludeQueryEngine;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedAggregation;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedInclude;
 use YasserElgammal\Green\Database\Query\GreenQuery;
+use YasserElgammal\Green\Database\Relations\Relation;
 use YasserElgammal\Green\Database\Relations\RelationRegistry;
 use YasserElgammal\Green\Pagination\Paginator;
 
@@ -63,23 +64,31 @@ class Table
     /**
      * Relation registry defined by subclasses.
      *
-     * Format:
-     * [
-     *   'posts' => [
-     *       'type'        => 'hasMany',
-     *       'model'       => Post::class,
-     *       'foreign_key' => 'user_id',
-     *       'local_key'   => 'id',
-     *   ],
-     *   'roles' => [
-     *       'type'        => 'manyToMany',
-     *       'model'       => Role::class,
-     *       'pivot'       => 'user_roles',
-     *       'foreign_key' => 'user_id',
-     *       'related_key' => 'role_id',
-     *       'local_key'   => 'id',
-     *   ],
-     * ]
+     * Recommended — use Relation DTOs (smart defaults, IDE support):
+     *
+     *   use YasserElgammal\Green\Database\Relations\BelongsTo;
+     *   use YasserElgammal\Green\Database\Relations\HasMany;
+     *   use YasserElgammal\Green\Database\Relations\ManyToMany;
+     *
+     *   protected function relations(): array
+     *   {
+     *       return [
+     *           'posts'  => new HasMany(Post::class),
+     *           'author' => new BelongsTo(User::class),
+     *           'roles'  => new ManyToMany(Role::class, pivot: 'user_roles'),
+     *       ];
+     *   }
+     *
+     * Legacy — plain arrays via property (still fully supported):
+     *
+     *   protected array $relations = [
+     *       'posts' => [
+     *           'type'        => 'hasMany',
+     *           'model'       => Post::class,
+     *           'foreign_key' => 'user_id',
+     *           'local_key'   => 'id',
+     *       ],
+     *   ];
      *
      * @var array<string, array<string, mixed>>
      */
@@ -104,6 +113,39 @@ class Table
         $this->connection  = Database::getConnection($this->connectionName);
         $this->table       = $blueprint->getTable();
         $this->primaryKey  = $blueprint->getPrimaryKey();
+
+        if (method_exists($this, 'relations')) {
+            $this->relations = array_merge($this->relations, $this->relations());
+        }
+
+        $this->resolveRelationDefaults();
+    }
+
+    /**
+     * Resolve smart defaults for relations defined via Relation DTOs.
+     *
+     * Relations created with new HasMany(), HasOne(), or ManyToMany()
+     * may have null foreignKey values when the default depends on the parent
+     * model name. This method fills those in using the blueprint class name,
+     * and then converts the DTOs into plain arrays.
+     *
+     * Relations defined with plain arrays (the old way) are untouched.
+     */
+    private function resolveRelationDefaults(): void
+    {
+        $parentSnake = Relation::classToSnake(get_class($this->blueprint));
+
+        foreach ($this->relations as $name => $config) {
+            if ($config instanceof Relation) {
+                $config->resolveDefaults($parentSnake);
+                $this->relations[$name] = $config->toArray();
+            } elseif (is_array($config) && !empty($config['_needs_defaults'])) {
+                // Support the array _needs_defaults marker just in case
+                unset($config['_needs_defaults']);
+                $config['foreign_key'] ??= $parentSnake . '_id';
+                $this->relations[$name] = $config;
+            }
+        }
     }
 
     // ─── Aggregation API ──────────────────────────────────────────────────────

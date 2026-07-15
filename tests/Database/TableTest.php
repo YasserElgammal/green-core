@@ -14,16 +14,16 @@ class TestUser extends Model
     protected string $table = 'users';
 }
 
+use YasserElgammal\Green\Database\Relations\HasMany;
+
 class TestUserTable extends Table
 {
-    protected array $relations = [
-        'posts' => [
-            'type'        => 'hasMany',
-            'model'       => TestPost::class,
-            'foreign_key' => 'user_id',
-            'local_key'   => 'id',
-        ]
-    ];
+    protected function relations(): array
+    {
+        return [
+            'posts' => new HasMany(TestPost::class, localKey: 'id')
+        ];
+    }
 }
 
 class TestPost extends Model
