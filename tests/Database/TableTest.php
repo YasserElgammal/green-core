@@ -171,4 +171,199 @@ class TableTest extends TestCase
         $this->assertNotEmpty($saved->created_at);
         $this->assertNull($saved->updated_at);
     }
+
+    // ─── Selective Column Loading Tests ──────────────────────────────────────
+
+    public function test_select_returns_only_specified_columns(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $users = $table->select('name')->fetchAll();
+
+        $this->assertCount(1, $users);
+        // id is auto-injected (primary key)
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+        // Columns not selected should be null
+        $this->assertNull($users[0]->created_at);
+    }
+
+    public function test_select_with_variadic_strings(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $users = $table->select('id', 'name')->fetchAll();
+
+        $this->assertCount(1, $users);
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertNull($users[0]->created_at);
+    }
+
+    public function test_select_with_array_syntax(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $users = $table->select(['id', 'name'])->fetchAll();
+
+        $this->assertCount(1, $users);
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertNull($users[0]->created_at);
+    }
+
+    public function test_select_auto_injects_primary_key(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        // Only request 'name', but PK 'id' should be auto-injected
+        $users = $table->select('name')->fetchAll();
+
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+    }
+
+    public function test_select_with_fetch_by_id(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $user = $table->select('name')->fetchById(1);
+
+        $this->assertNotNull($user);
+        $this->assertSame(1, $user->id);
+        $this->assertSame('Alice', $user->name);
+        $this->assertNull($user->created_at);
+    }
+
+    public function test_select_resets_after_query(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+
+        // First query with select
+        $users = $table->select('name')->fetchAll();
+        $this->assertNull($users[0]->created_at);
+
+        // Second query without select should return all columns
+        $users = $table->fetchAll();
+        $this->assertNotNull($users[0]->created_at);
+    }
+
+    public function test_select_invalid_column_throws(): void
+    {
+        $table = new TestUserTable(new TestUser());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $table->select('invalid column!');
+    }
+
+    public function test_select_with_fetch_where(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $users = $table->select('name')->fetchWhere('name', 'Alice');
+
+        $this->assertCount(1, $users);
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertNull($users[0]->created_at);
+    }
+
+    public function test_select_with_fetch_first(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $user = $table->select('name')->fetchFirst('name', 'Alice');
+
+        $this->assertNotNull($user);
+        $this->assertSame(1, $user->id);
+        $this->assertSame('Alice', $user->name);
+        $this->assertNull($user->created_at);
+    }
+
+    public function test_select_with_pagination(): void
+    {
+        for ($i = 1; $i <= 5; $i++) {
+            $this->connection->insert('users', [
+                'id' => $i,
+                'name' => "User {$i}",
+                'created_at' => '2024-01-01 00:00:00',
+                'updated_at' => null,
+            ]);
+        }
+
+        $table = new TestUserTable(new TestUser());
+        $result = $table->select('name')->paginate(2, 1);
+
+        $this->assertCount(2, $result['data']);
+        $this->assertSame(1, $result['data'][0]->id);
+        $this->assertSame('User 1', $result['data'][0]->name);
+        $this->assertNull($result['data'][0]->created_at);
+        $this->assertSame(5, $result['meta']['total_items']);
+    }
+
+    public function test_without_select_returns_all_columns(): void
+    {
+        $this->connection->insert('users', [
+            'id' => 1,
+            'name' => 'Alice',
+            'created_at' => '2024-01-01 00:00:00',
+            'updated_at' => null,
+        ]);
+
+        $table = new TestUserTable(new TestUser());
+        $users = $table->fetchAll();
+
+        $this->assertSame(1, $users[0]->id);
+        $this->assertSame('Alice', $users[0]->name);
+        $this->assertSame('2024-01-01 00:00:00', $users[0]->created_at);
+    }
 }

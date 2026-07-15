@@ -105,7 +105,13 @@ class Paginator
     {
         $query = clone $items;
 
-        return $query->select('*')
+        // Respect existing column selection; only default to * if not set
+        $selectPart = $this->getSelectParts($query);
+        if (empty($selectPart) || $selectPart === ['*']) {
+            $query->select('*');
+        }
+
+        return $query
             ->setFirstResult($this->offset($page, $perPage))
             ->setMaxResults($this->limit($perPage, $withCount))
             ->executeQuery()
@@ -166,5 +172,23 @@ class Paginator
                 'has_prev' => $page > 1,
             ],
         ];
+    }
+
+    /**
+     * Get the select query parts from a QueryBuilder instance.
+     * Supports both DBAL v3 (via getQueryPart) and DBAL v4 (via Reflection).
+     */
+    private function getSelectParts(QueryBuilder $qb): array
+    {
+        if (method_exists($qb, 'getQueryPart')) {
+            return $qb->getQueryPart('select') ?: [];
+        }
+
+        try {
+            $ref = new \ReflectionProperty($qb, 'select');
+            return $ref->getValue($qb);
+        } catch (\ReflectionException) {
+            return [];
+        }
     }
 }

@@ -16,6 +16,9 @@ abstract class GreenQueryState
     /** @var array<int, array{boolean: string, sql: string}> */
     protected array $conditions = [];
 
+    /** @var string[] */
+    protected array $selectedColumns = [];
+
     protected int $parameterIndex = 0;
 
     /**
@@ -48,6 +51,20 @@ abstract class GreenQueryState
     protected function preparedBuilder(): QueryBuilder
     {
         $builder = clone $this->builder;
+
+        // Apply column selection if specified
+        if (!empty($this->selectedColumns)) {
+            $columns = $this->selectedColumns;
+
+            // Auto-inject the primary key if not explicitly selected
+            $pk = $this->table->getPrimaryKey();
+            if (!in_array($pk, $columns, true)) {
+                array_unshift($columns, $pk);
+            }
+
+            $builder->select(...$columns);
+        }
+
         $sql = $this->compileConditions();
 
         if ($sql !== '') {
