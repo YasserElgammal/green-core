@@ -151,7 +151,18 @@ Routes are declared directly on controller methods using PHP 8 Attributes. They 
 public function show(Request $request, int $id): array
 ```
 
-[`Router::registerRoutesFromController()`](../src/Routing/Router.php) uses `ReflectionClass` to scan controllers for `#[Route]` attributes, registers them with FastRoute, and tracks named routes.
+[`Router::registerRoutesFromController()`](../src/Routing/Router.php) delegates attribute scanning to [`RouteRegistrar`](../src/Routing/RouteRegistrar.php). The registrar uses `ReflectionClass` to find `#[Route]` attributes and stores the normalized route records in [`RouteRegistry`](../src/Routing/RouteRegistry.php), including named route paths used by URL generation.
+
+### Routing Components
+
+The public [`Router`](../src/Routing/Router.php) remains the facade for applications, but the routing internals are split by responsibility:
+
+| Component | Responsibility |
+|---|---|
+| [`RouteRegistry`](../src/Routing/RouteRegistry.php) | Stores normalized route definitions and named route lookups. |
+| [`RouteRegistrar`](../src/Routing/RouteRegistrar.php) | Scans controller attributes and registers one route record per HTTP method. |
+| [`RouteMatcher`](../src/Routing/RouteMatcher.php) | Builds the FastRoute dispatcher, supports route cache generation, and matches incoming requests. |
+| [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php) | Handles FastRoute match results, stamps route data onto the request, merges middleware, and invokes the matched route through the middleware pipeline. |
 
 ### URL Generation
 
@@ -159,9 +170,12 @@ The [`UrlGenerator`](../src/Routing/UrlGenerator.php) handles reverse-routing. B
 
 ### Dispatch Flow
 
-1. FastRoute compiles routes into an optimized regex tree via `FastRoute\simpleDispatcher`.
-2. On dispatch, the matched handler + URI parameters are extracted.
-3. The Router normalizes return types — if a controller returns an `array`, it's automatically wrapped in a [`JsonResponse`](../src/Http/JsonResponse.php).
+1. [`RouteMatcher`](../src/Routing/RouteMatcher.php) compiles registered routes into a FastRoute dispatcher, using cached dispatchers when route caching is enabled.
+2. The matcher returns the FastRoute result tuple (`NOT_FOUND`, `METHOD_NOT_ALLOWED`, or `FOUND`).
+3. [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php) translates unmatched routes into `404`/`405` responses, or extracts the matched handler and URI parameters.
+4. Route parameters and handler metadata are stored on the [`Request`](../src/Http/Request.php) for downstream middleware.
+5. Global middleware, route middleware, and [`PolicyMiddleware`](../src/Routing/PolicyMiddleware.php) are merged and sent through [`MiddlewarePipeline`](../src/Routing/MiddlewarePipeline.php).
+6. [`RouteInvoker`](../src/Routing/RouteInvoker.php) resolves the controller method, injects arguments, invokes it, and normalizes return types into a [`Response`](../src/Http/Response.php).
 
 ---
 
@@ -179,9 +193,9 @@ graph LR
     Res --> M3 --> M2 --> M1
 ```
 
-Inside [`Router::runPipeline()`](../src/Routing/Router.php):
+Inside [`MiddlewarePipeline::send()`](../src/Routing/MiddlewarePipeline.php):
 
-1. A **base closure** (the "core" of the onion) is created — responsible for reflecting the controller, injecting arguments, and invoking the method.
+1. A **destination closure** is provided by [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php). It delegates the matched handler to [`RouteInvoker`](../src/Routing/RouteInvoker.php).
 2. The middleware array is iterated in **reverse order** (`array_reverse`).
 3. For each middleware, a new closure wraps the *previous* closure.
 4. When the final pipeline executes, the request passes through each middleware's `handle($request, $next)` method, drilling down to the controller, then bubbling back up as a `Response`.
@@ -359,10 +373,12 @@ The query layer is split into traits by responsibility:
 |---|---|
 | [`BuildsConditions`](../src/Database/Query/Traits/BuildsConditions.php) | `where`, `orWhere`, grouped conditions, list/null/range/like helpers. |
 | [`OrdersQuery`](../src/Database/Query/Traits/OrdersQuery.php) | `orderBy`, `latest`, `oldest`, `limit`, `offset`. |
-| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `first`, `firstRequired`. |
+| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `paginate`, `first`, `firstRequired`. |
 | [`RunsAggregates`](../src/Database/Query/Traits/RunsAggregates.php) | `count`, `exists`, `sum`, `avg`, `min`, `max`. |
 
-Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()`, so pending eager loads and model hydration remain centralized in the Table Gateway.
+Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()` or `Table::paginateFromBuilder()`, so pending eager loads, pagination hydration, and model hydration remain centralized in the Table Gateway.
+
+`GreenQuery::paginate($perPage, $page, $withCount)` paginates the filtered query itself, preserving `where` conditions and ordering. When `$withCount` is `false`, [`Paginator`](../src/Pagination/Paginator.php) skips the `COUNT(*)` query and fetches one extra row internally to determine `has_next`.
 
 See [Database Querying](database-querying.md) for the user-facing API reference.
 

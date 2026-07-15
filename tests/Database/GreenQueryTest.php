@@ -195,6 +195,37 @@ class GreenQueryTest extends TestCase
         $this->assertSame('Omar', $user->name);
     }
 
+    public function test_query_paginate_respects_conditions_and_ordering(): void
+    {
+        $result = $this->users->query()
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->oldest('id')
+            ->paginate(1, 2);
+
+        $this->assertCount(1, $result['data']);
+        $this->assertSame('Omar', $result['data'][0]->name);
+        $this->assertSame(2, $result['meta']['current_page']);
+        $this->assertSame(1, $result['meta']['per_page']);
+        $this->assertSame(2, $result['meta']['total_items']);
+        $this->assertSame(2, $result['meta']['total_pages']);
+        $this->assertFalse($result['meta']['has_next']);
+        $this->assertTrue($result['meta']['has_prev']);
+
+        $withoutCount = $this->users->query()
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->oldest('id')
+            ->paginate(1, 1, false);
+
+        $this->assertCount(1, $withoutCount['data']);
+        $this->assertSame('Mona', $withoutCount['data'][0]->name);
+        $this->assertNull($withoutCount['meta']['total_items']);
+        $this->assertNull($withoutCount['meta']['total_pages']);
+        $this->assertTrue($withoutCount['meta']['has_next']);
+        $this->assertFalse($withoutCount['meta']['has_prev']);
+    }
+
     public function test_aggregations_respect_where_conditions(): void
     {
         $query = $this->users->query()->where('status', 'active')->whereNull('deleted_at');
