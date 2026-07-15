@@ -813,7 +813,6 @@ class Table
         if ($this->timestamps) {
             $now = date('Y-m-d H:i:s');
             $data['created_at'] ??= $now;
-            $data['updated_at'] ??= $now;
         }
 
         $this->connection->insert($this->table, $data);
@@ -852,9 +851,7 @@ class Table
             if ($this->timestamps) {
                 $now = date('Y-m-d H:i:s');
                 $data['created_at'] ??= $now;
-                $data['updated_at'] ??= $now;
                 $model->set('created_at', $data['created_at']);
-                $model->set('updated_at', $data['updated_at']);
             }
 
             $this->connection->insert($this->table, $data);
@@ -869,6 +866,10 @@ class Table
      */
     public function update(int|string $id, array $data): int
     {
+        if ($this->timestamps) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+
         return $this->connection->update(
             $this->table,
             $data,
