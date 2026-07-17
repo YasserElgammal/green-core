@@ -205,25 +205,12 @@ if (!function_exists('csrf_token')) {
 }
 
 if (!function_exists('green_log_set_manager')) {
-    /**
-     * Register the LogManager instance for use by the green_log() helper.
-     *
-     * Called once by Application during bootstrap. This avoids static
-     * methods on classes while giving the helper access to the log system.
-     *
-     * @param LogManager $manager  The application's LogManager instance
-     */
+    /** @deprecated Bind LogManager through the application container instead. */
     function green_log_set_manager(LogManager $manager): void
     {
-        // Store in a static variable — same pattern used by session()
-        static $stored = false;
-        if (!$stored) {
-            $GLOBALS['__green_log_manager'] = $manager;
-            $stored = true;
-        }
+        app()->instance(LogManager::class, $manager);
     }
 }
-
 if (!function_exists('green_log')) {
     /**
      * Log a message manually through the Green logging system.
@@ -240,10 +227,9 @@ if (!function_exists('green_log')) {
      */
     function green_log(string $message, string $level = 'error', array $context = []): void
     {
-        $manager = $GLOBALS['__green_log_manager'] ?? null;
-
-        if (!$manager instanceof LogManager) {
-            // Fallback if the logging system hasn't been booted yet
+        try {
+            $manager = app(LogManager::class);
+        } catch (\Throwable) {
             error_log("[Green] {$level}: {$message}");
             return;
         }
@@ -260,134 +246,83 @@ if (!function_exists('green_log')) {
 }
 
 if (!function_exists('drive_set_instance')) {
-    /**
-     * Register the Drive instance for use by the drive() helper.
-     *
-     * @param Drive $drive
-     */
-    function drive_set_instance(Drive $drive): void
+    /** @deprecated Bind Drive through the application container instead. */
+    function drive_set_instance(Drive $instance): void
     {
-        static $stored = false;
-        if (!$stored) {
-            $GLOBALS['__green_drive_instance'] = $drive;
-            $stored = true;
-        }
+        app()->instance(Drive::class, $instance);
     }
 }
 
 if (!function_exists('drive')) {
-    /**
-     * Get the global Drive instance.
-     *
-     * @return Drive
-     */
     function drive(): Drive
     {
-        $drive = $GLOBALS['__green_drive_instance'] ?? null;
-        if (!$drive instanceof Drive) {
-            throw new \RuntimeException('Drive has not been initialized.');
-        }
-        return $drive;
+        return app(Drive::class);
     }
 }
 
 if (!function_exists('connect_set_instance')) {
-    /**
-     * Register the Connect instance for use by the connect() helper.
-     *
-     * @param Connect $connect
-     */
-    function connect_set_instance(Connect $connect): void
+    /** @deprecated Bind Connect through the application container instead. */
+    function connect_set_instance(Connect $instance): void
     {
-        $GLOBALS['__green_connect_instance'] = $connect;
+        app()->instance(Connect::class, $instance);
     }
 }
 
 if (!function_exists('connect')) {
-    /**
-     * Get the global Connect instance for outgoing HTTP requests.
-     *
-     * @return Connect
-     */
     function connect(): Connect
     {
-        $connect = $GLOBALS['__green_connect_instance'] ?? null;
-        if (!$connect instanceof Connect) {
-            throw new \RuntimeException('Connect has not been initialized.');
-        }
-        return $connect;
+        return app(Connect::class);
     }
 }
 
 // ─── Phase 3: Signal Dispatcher ──────────────────────────────────────────────
 
 if (!function_exists('signal_set_instance')) {
-    function signal_set_instance(SignalDispatcher $dispatcher): void
+    /** @deprecated Bind SignalDispatcher through the application container instead. */
+    function signal_set_instance(SignalDispatcher $instance): void
     {
-        static $stored = false;
-        if (!$stored) {
-            $GLOBALS['__green_signal_instance'] = $dispatcher;
-            $stored = true;
-        }
+        app()->instance(SignalDispatcher::class, $instance);
     }
 }
 
 if (!function_exists('signal')) {
     function signal(): SignalDispatcher
     {
-        $signal = $GLOBALS['__green_signal_instance'] ?? null;
-        if (!$signal instanceof SignalDispatcher) {
-            throw new \RuntimeException('Signal Dispatcher has not been initialized.');
-        }
-        return $signal;
+        return app(SignalDispatcher::class);
     }
 }
 
 // ─── Phase 3: Authorizer ─────────────────────────────────────────────────────
 
 if (!function_exists('authorizer_set_instance')) {
-    function authorizer_set_instance(Authorizer $authorizer): void
+    /** @deprecated Bind Authorizer through the application container instead. */
+    function authorizer_set_instance(Authorizer $instance): void
     {
-        static $stored = false;
-        if (!$stored) {
-            $GLOBALS['__green_authorizer_instance'] = $authorizer;
-            $stored = true;
-        }
+        app()->instance(Authorizer::class, $instance);
     }
 }
 
 if (!function_exists('authorizer')) {
     function authorizer(): Authorizer
     {
-        $authorizer = $GLOBALS['__green_authorizer_instance'] ?? null;
-        if (!$authorizer instanceof Authorizer) {
-            throw new \RuntimeException('Authorizer has not been initialized.');
-        }
-        return $authorizer;
+        return app(Authorizer::class);
     }
 }
 
 // ─── Phase 3: Cache Manager ──────────────────────────────────────────────────
 
 if (!function_exists('cache_set_instance')) {
-    function cache_set_instance(CacheManager $manager): void
+    /** @deprecated Bind CacheManager through the application container instead. */
+    function cache_set_instance(CacheManager $instance): void
     {
-        static $stored = false;
-        if (!$stored) {
-            $GLOBALS['__green_cache_instance'] = $manager;
-            $stored = true;
-        }
+        app()->instance(CacheManager::class, $instance);
     }
 }
 
 if (!function_exists('cache')) {
     function cache(): CacheManager
     {
-        $cache = $GLOBALS['__green_cache_instance'] ?? null;
-        if (!$cache instanceof CacheManager) {
-            throw new \RuntimeException('CacheManager has not been initialized.');
-        }
-        return $cache;
+        return app(CacheManager::class);
     }
 }
 

@@ -29,6 +29,9 @@ class Container
     {
         $concrete ??= $abstract;
 
+        // A new binding must replace a previously resolved singleton too.
+        unset($this->instances[$abstract]);
+
         $this->bindings[$abstract] = [
             'concrete' => $concrete,
             'shared'   => $shared,
@@ -96,26 +99,26 @@ class Container
 
         $this->buildStack[$concrete] = true;
 
-        $reflection = new ReflectionClass($concrete);
+        try {
+            $reflection = new ReflectionClass($concrete);
 
-        if (!$reflection->isInstantiable()) {
+            if (!$reflection->isInstantiable()) {
+                throw new BindingException("Target class [{$concrete}] is not instantiable.");
+            }
+
+            $constructor = $reflection->getConstructor();
+
+            if ($constructor === null) {
+                return new $concrete();
+            }
+
+            return $reflection->newInstanceArgs(
+                $this->resolveDependencies($constructor->getParameters(), $concrete)
+            );
+        } finally {
+            // Failed resolutions must not poison subsequent make() calls.
             unset($this->buildStack[$concrete]);
-            throw new BindingException("Target class [{$concrete}] is not instantiable.");
         }
-
-        $constructor = $reflection->getConstructor();
-
-        if ($constructor === null) {
-            unset($this->buildStack[$concrete]);
-            return new $concrete();
-        }
-
-        $parameters = $constructor->getParameters();
-        $dependencies = $this->resolveDependencies($parameters, $concrete);
-
-        unset($this->buildStack[$concrete]);
-
-        return $reflection->newInstanceArgs($dependencies);
     }
 
     /**

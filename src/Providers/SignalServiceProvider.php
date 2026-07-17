@@ -14,13 +14,4 @@ class SignalServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        $dispatcher = $this->app->make(SignalDispatcher::class);
-
-        // Register the global helper instance
-        if (function_exists('signal_set_instance')) {
-            signal_set_instance($dispatcher);
-        }
-    }
 }

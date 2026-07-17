@@ -18,8 +18,4 @@ class LogServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        green_log_set_manager($this->app->make(LogManager::class));
-    }
 }

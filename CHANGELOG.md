@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-07-18
+
+### Added
+- Dedicated route registration, registry, matching, and matched-route dispatch components.
+- Database relationship objects for `HasMany`, `HasOne`, `BelongsTo`, and `ManyToMany` relations.
+- Table-driven eager loading and aggregate support backed by a relational registry.
+- Pagination support for query results, including an expanded `Paginator` implementation.
+- Fluent column selection support for `GreenQuery`.
+- Container unit coverage for auto-wiring, service lifetimes, rebinding, defaults, circular dependencies, and failed-resolution recovery.
+
+### Changed
+- Refactored `Router` to delegate route registration, matching, and dispatch responsibilities to focused components.
+- Expanded `Table` with automatic timestamp management and relation-aware querying.
+- Improved include-query relation resolution and query-state handling.
+- Made the service container the single source of truth for logging, drive, HTTP client, signals, authorization, and cache helpers.
+- Kept legacy `*_set_instance()` helpers as deprecated container bindings for backward compatibility.
+
+### Fixed
+- Prevented resolved singletons from surviving a service rebind and ensured failed dependency resolutions always clean the circular-resolution stack.
+- Resolved nested IQL relations declared through modern `relations()` methods, including relation DTO definitions.
+- Added error-kernel unregistration so test and worker lifecycles restore their previous PHP error and exception handlers.
+
+## [2.2.0] - 2026-07-11
+
+### Added
+- `GreenQuery` fluent query builder with condition, ordering, result-fetching, and aggregate operations.
+- Query state management for composing and reusing database queries.
+- Rate limiting with array and file stores, configuration publishing, and `ThrottleRequests` middleware.
+- Routing middleware pipeline, route invoker, response normalizer, and policy middleware.
+- Routing service provider for registering routing infrastructure with the application container.
+- Relation loader registration and additional helpers for table-based models.
+
+### Changed
+- Refactored `Router` and `MiddlewareResolver` around the new routing pipeline.
+- Expanded `Table` to integrate fluent queries and relation loading.
+- Improved file cache path handling, directory creation, deletion, and cleanup behavior.
+## [2.1.0] - 2026-06-29
+
+### Added
+- Cache manager with array, file, database, and Redis drivers.
+- Policy-based authorization with policies, authorizers, policy attributes, and forbidden exceptions.
+- Signal dispatcher and `SignalAware` support for application events.
+- Named routes, URL generation, and routing policy checks.
+- Database connection pooling and database-specific schema grammars for MySQL and SQLite.
+- Model dirty tracking and automatic timestamp support.
+- Console generators for authorizers, policies, events, and listeners.
+- Service providers for authentication, caching, database connections, and signals.
+
+### Changed
+- Wired authentication, signals, caching, and routing helpers into the application bootstrap flow.
+- Refactored schema compilation behind a database grammar abstraction.
+- Expanded global helpers for caching, authorization, signals, and URL generation.
+
+### Fixed
+- Cleared PHP's file status cache after cache-file deletion to prevent stale existence checks.
+
 ## [2.0.0] - 2026-06-15
 
 ### Added

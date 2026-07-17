@@ -49,7 +49,7 @@ Green was built with a distinct identity and philosophy, reacting against the tr
 The framework employs a minimalist, explicit architecture. Unlike heavy frameworks that rely on complex DI containers and pervasive Service Locators, Green opts for:
 
 - **Direct instantiation** and explicit dependencies
-- **Focused singletons** exposed via helper functions
+- **Container-owned singletons** exposed through thin helper functions
 - **Domain-specific managers** (`LogManager`, `DriveManager`, `ConnectManager`, `TranslatorManager`) instead of a monolithic container
 
 **Key Architectural Principles:**
@@ -74,7 +74,7 @@ new Application()
 
 1. **`loadConfiguration()`** — Initializes the [`ConfigRepository`](../src/Config/Repository.php) and loads all `.php` files from the `config/` directory. The config is bound to the container and accessible via the `config()` helper.
 2. **`registerCoreProviders()`** — Binds fundamental framework services into the Container via Service Providers.
-3. **`bootProviders()`** — Executes the `boot` lifecycle method on all registered providers, initializing global helpers like `drive()`, `connect()`, and configuring the Twig view engine.
+3. **`bootProviders()`** — Executes post-registration setup after every provider has registered its bindings. For example, the View provider configures Twig and the Error provider installs PHP handlers. Service helpers do not keep separate global copies; they resolve their services from the Container.
 
 ---
 
@@ -131,10 +131,21 @@ The [`Application`](../src/Application.php) itself extends the [`Container`](../
 - **Bindings & Singletons**: Use `bind()`, `singleton()`, and `instance()` for explicitly defining how dependencies are resolved.
 - **Auto-Wiring**: Uses PHP's `ReflectionClass` to automatically inject dependencies into class constructors.
 - **Circular Dependency Detection**: Prevents infinite loops when resolving nested dependencies.
+- **Safe Rebinding**: Replacing a binding clears any previously resolved singleton for that abstract type.
+- **Failure Recovery**: Resolution state is cleaned in a `finally` block, so one failed build cannot cause a false circular-dependency error on a later attempt.
 
 ### Resolving Dependencies
 
 Dependencies can be resolved explicitly via `$app->make(ClassName::class)` or the global `app(ClassName::class)` helper. Most commonly, dependencies are automatically injected into Controllers and Middlewares by the Router's pipeline using the Container's auto-wiring capabilities.
+
+The Container is the single source of truth for framework services. Convenience helpers such as `drive()`, `connect()`, `signal()`, `authorizer()`, `cache()`, and `green_log()` resolve the same instances registered by their Service Providers:
+
+```php
+drive() === app(Drive::class); // true
+cache() === app(CacheManager::class); // true
+```
+
+Legacy `*_set_instance()` functions remain available for backward compatibility, but are deprecated and now call `Application::instance()` instead of writing service objects into `$GLOBALS`. Application code should prefer constructor injection; tests may replace a service explicitly through `$app->instance()`.
 
 ---
 
@@ -257,7 +268,7 @@ graph TD
 
 | Component | Role |
 |---|---|
-| [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php) | Central orchestrator. Registers `set_exception_handler`, `set_error_handler`, `register_shutdown_function`. Includes `isHandling` flag for loop prevention. |
+| [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php) | Central orchestrator. Idempotently registers `set_exception_handler`, `set_error_handler`, and `register_shutdown_function`. Includes `isHandling` loop prevention and `unregister()` to restore the previous PHP handlers when an application/test lifecycle ends. |
 | [`ErrorRecord`](../src/ErrorHandling/ErrorRecord.php) | Immutable value object. Every error (exception, PHP warning, fatal) is normalized into a standardized shape: ID, message, trace, request context, fingerprint. |
 | [`LogManager`](../src/Logging/LogManager.php) | Dispatches `ErrorRecord` to all eligible drivers. Features per-request **deduplication** (max N logs per fingerprint) and file-based **rate limiting** (max N per time window). |
 | [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) | Presentation layer. Renders JSON or HTML error responses. Stack traces are only exposed when `APP_DEBUG=true`. |
@@ -417,6 +428,8 @@ Pipeline: **Raw String → Parse (AST) → Validate → Resolve (Closure constra
 
 The resolved closures modify the underlying `QueryBuilder` before the relation is fetched.
 
+Nested validation supports both legacy relation arrays and modern relation DTOs returned by a protected `relations()` method. The validator resolves the related model's conventional Table class (for example, `App\Models\Comment` to `App\Tables\CommentTable`), reads its relation definitions without invoking the database-dependent Table constructor, converts `Relation` DTOs to configuration arrays, and validates the child node recursively.
+
 ---
 
 ## 14. Session Management
@@ -509,7 +522,7 @@ Extensibility in Green is managed primarily through **Service Providers**.
 Providers extend the abstract [`ServiceProvider`](../src/Support/ServiceProvider.php) class and contain two lifecycle methods:
 
 - `register()`: Bind things into the container. Do not execute any logic or resolve other services here.
-- `boot()`: Execute bootstrap logic after all other providers have been registered.
+- `boot()`: Execute post-registration setup after all providers have registered. It is intended for real bootstrap work, not for copying resolved services into global variables.
 
 ```php
 class CustomServiceProvider extends ServiceProvider
@@ -526,7 +539,7 @@ class CustomServiceProvider extends ServiceProvider
 }
 ```
 
-This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider.
+This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider. Core helpers remain thin accessors over the Container, so `$app->make(Service::class)` and its corresponding helper cannot drift into different instances.
 
 ---
 

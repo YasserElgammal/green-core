@@ -27,13 +27,4 @@ class CacheServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        $manager = $this->app->make(CacheManager::class);
-
-        // Register the global helper instance
-        if (function_exists('cache_set_instance')) {
-            cache_set_instance($manager);
-        }
-    }
 }
