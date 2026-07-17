@@ -39,6 +39,8 @@ final class GreenErrorKernel
      */
     private mixed $previousErrorHandler = null;
 
+    private bool $registered = false;
+
     public function __construct(
         private readonly LogManager $logManager,
     ) {
@@ -60,11 +62,31 @@ final class GreenErrorKernel
      */
     public function register(): void
     {
+        if ($this->registered) {
+            return;
+        }
+
         // Store previous handlers so we can chain them if needed
         $this->previousExceptionHandler = set_exception_handler([$this, 'handleException']);
         $this->previousErrorHandler     = set_error_handler([$this, 'handlePhpError']);
+        $this->registered               = true;
 
         register_shutdown_function([$this, 'handleShutdown']);
+    }
+
+    /**
+     * Restore the handlers that were active before this kernel was registered.
+     * Useful when an application lifecycle ends, especially in test workers.
+     */
+    public function unregister(): void
+    {
+        if (!$this->registered) {
+            return;
+        }
+
+        restore_exception_handler();
+        restore_error_handler();
+        $this->registered = false;
     }
 
     /**

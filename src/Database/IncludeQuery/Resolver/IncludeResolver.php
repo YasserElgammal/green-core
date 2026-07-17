@@ -215,7 +215,7 @@ final class IncludeResolver
         }
 
         // Read current SELECT parts and add missing join columns
-        $selectPart = $qb->getQueryPart('select');
+        $selectPart = $this->getSelectParts($qb);
 
         if (is_array($selectPart)) {
             $existing = array_map('trim', $selectPart);
@@ -230,6 +230,24 @@ final class IncludeResolver
                     $qb->addSelect($col);
                 }
             }
+        }
+    }
+
+    /**
+     * Get the select query parts from a QueryBuilder instance.
+     * Supports both DBAL v3 (via getQueryPart) and DBAL v4 (via Reflection).
+     */
+    private function getSelectParts(QueryBuilder $qb): array
+    {
+        if (method_exists($qb, 'getQueryPart')) {
+            return $qb->getQueryPart('select') ?: [];
+        }
+
+        try {
+            $ref = new \ReflectionProperty($qb, 'select');
+            return $ref->getValue($qb);
+        } catch (\ReflectionException) {
+            return [];
         }
     }
 }

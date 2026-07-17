@@ -49,7 +49,7 @@ Green was built with a distinct identity and philosophy, reacting against the tr
 The framework employs a minimalist, explicit architecture. Unlike heavy frameworks that rely on complex DI containers and pervasive Service Locators, Green opts for:
 
 - **Direct instantiation** and explicit dependencies
-- **Focused singletons** exposed via helper functions
+- **Container-owned singletons** exposed through thin helper functions
 - **Domain-specific managers** (`LogManager`, `DriveManager`, `ConnectManager`, `TranslatorManager`) instead of a monolithic container
 
 **Key Architectural Principles:**
@@ -74,7 +74,7 @@ new Application()
 
 1. **`loadConfiguration()`** — Initializes the [`ConfigRepository`](../src/Config/Repository.php) and loads all `.php` files from the `config/` directory. The config is bound to the container and accessible via the `config()` helper.
 2. **`registerCoreProviders()`** — Binds fundamental framework services into the Container via Service Providers.
-3. **`bootProviders()`** — Executes the `boot` lifecycle method on all registered providers, initializing global helpers like `drive()`, `connect()`, and configuring the Twig view engine.
+3. **`bootProviders()`** — Executes post-registration setup after every provider has registered its bindings. For example, the View provider configures Twig and the Error provider installs PHP handlers. Service helpers do not keep separate global copies; they resolve their services from the Container.
 
 ---
 
@@ -131,10 +131,21 @@ The [`Application`](../src/Application.php) itself extends the [`Container`](../
 - **Bindings & Singletons**: Use `bind()`, `singleton()`, and `instance()` for explicitly defining how dependencies are resolved.
 - **Auto-Wiring**: Uses PHP's `ReflectionClass` to automatically inject dependencies into class constructors.
 - **Circular Dependency Detection**: Prevents infinite loops when resolving nested dependencies.
+- **Safe Rebinding**: Replacing a binding clears any previously resolved singleton for that abstract type.
+- **Failure Recovery**: Resolution state is cleaned in a `finally` block, so one failed build cannot cause a false circular-dependency error on a later attempt.
 
 ### Resolving Dependencies
 
 Dependencies can be resolved explicitly via `$app->make(ClassName::class)` or the global `app(ClassName::class)` helper. Most commonly, dependencies are automatically injected into Controllers and Middlewares by the Router's pipeline using the Container's auto-wiring capabilities.
+
+The Container is the single source of truth for framework services. Convenience helpers such as `drive()`, `connect()`, `signal()`, `authorizer()`, `cache()`, and `green_log()` resolve the same instances registered by their Service Providers:
+
+```php
+drive() === app(Drive::class); // true
+cache() === app(CacheManager::class); // true
+```
+
+Legacy `*_set_instance()` functions remain available for backward compatibility, but are deprecated and now call `Application::instance()` instead of writing service objects into `$GLOBALS`. Application code should prefer constructor injection; tests may replace a service explicitly through `$app->instance()`.
 
 ---
 
@@ -151,7 +162,18 @@ Routes are declared directly on controller methods using PHP 8 Attributes. They 
 public function show(Request $request, int $id): array
 ```
 
-[`Router::registerRoutesFromController()`](../src/Routing/Router.php) uses `ReflectionClass` to scan controllers for `#[Route]` attributes, registers them with FastRoute, and tracks named routes.
+[`Router::registerRoutesFromController()`](../src/Routing/Router.php) delegates attribute scanning to [`RouteRegistrar`](../src/Routing/RouteRegistrar.php). The registrar uses `ReflectionClass` to find `#[Route]` attributes and stores the normalized route records in [`RouteRegistry`](../src/Routing/RouteRegistry.php), including named route paths used by URL generation.
+
+### Routing Components
+
+The public [`Router`](../src/Routing/Router.php) remains the facade for applications, but the routing internals are split by responsibility:
+
+| Component | Responsibility |
+|---|---|
+| [`RouteRegistry`](../src/Routing/RouteRegistry.php) | Stores normalized route definitions and named route lookups. |
+| [`RouteRegistrar`](../src/Routing/RouteRegistrar.php) | Scans controller attributes and registers one route record per HTTP method. |
+| [`RouteMatcher`](../src/Routing/RouteMatcher.php) | Builds the FastRoute dispatcher, supports route cache generation, and matches incoming requests. |
+| [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php) | Handles FastRoute match results, stamps route data onto the request, merges middleware, and invokes the matched route through the middleware pipeline. |
 
 ### URL Generation
 
@@ -159,9 +181,12 @@ The [`UrlGenerator`](../src/Routing/UrlGenerator.php) handles reverse-routing. B
 
 ### Dispatch Flow
 
-1. FastRoute compiles routes into an optimized regex tree via `FastRoute\simpleDispatcher`.
-2. On dispatch, the matched handler + URI parameters are extracted.
-3. The Router normalizes return types — if a controller returns an `array`, it's automatically wrapped in a [`JsonResponse`](../src/Http/JsonResponse.php).
+1. [`RouteMatcher`](../src/Routing/RouteMatcher.php) compiles registered routes into a FastRoute dispatcher, using cached dispatchers when route caching is enabled.
+2. The matcher returns the FastRoute result tuple (`NOT_FOUND`, `METHOD_NOT_ALLOWED`, or `FOUND`).
+3. [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php) translates unmatched routes into `404`/`405` responses, or extracts the matched handler and URI parameters.
+4. Route parameters and handler metadata are stored on the [`Request`](../src/Http/Request.php) for downstream middleware.
+5. Global middleware, route middleware, and [`PolicyMiddleware`](../src/Routing/PolicyMiddleware.php) are merged and sent through [`MiddlewarePipeline`](../src/Routing/MiddlewarePipeline.php).
+6. [`RouteInvoker`](../src/Routing/RouteInvoker.php) resolves the controller method, injects arguments, invokes it, and normalizes return types into a [`Response`](../src/Http/Response.php).
 
 ---
 
@@ -179,9 +204,9 @@ graph LR
     Res --> M3 --> M2 --> M1
 ```
 
-Inside [`Router::runPipeline()`](../src/Routing/Router.php):
+Inside [`MiddlewarePipeline::send()`](../src/Routing/MiddlewarePipeline.php):
 
-1. A **base closure** (the "core" of the onion) is created — responsible for reflecting the controller, injecting arguments, and invoking the method.
+1. A **destination closure** is provided by [`MatchedRouteDispatcher`](../src/Routing/MatchedRouteDispatcher.php). It delegates the matched handler to [`RouteInvoker`](../src/Routing/RouteInvoker.php).
 2. The middleware array is iterated in **reverse order** (`array_reverse`).
 3. For each middleware, a new closure wraps the *previous* closure.
 4. When the final pipeline executes, the request passes through each middleware's `handle($request, $next)` method, drilling down to the controller, then bubbling back up as a `Response`.
@@ -243,7 +268,7 @@ graph TD
 
 | Component | Role |
 |---|---|
-| [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php) | Central orchestrator. Registers `set_exception_handler`, `set_error_handler`, `register_shutdown_function`. Includes `isHandling` flag for loop prevention. |
+| [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php) | Central orchestrator. Idempotently registers `set_exception_handler`, `set_error_handler`, and `register_shutdown_function`. Includes `isHandling` loop prevention and `unregister()` to restore the previous PHP handlers when an application/test lifecycle ends. |
 | [`ErrorRecord`](../src/ErrorHandling/ErrorRecord.php) | Immutable value object. Every error (exception, PHP warning, fatal) is normalized into a standardized shape: ID, message, trace, request context, fingerprint. |
 | [`LogManager`](../src/Logging/LogManager.php) | Dispatches `ErrorRecord` to all eligible drivers. Features per-request **deduplication** (max N logs per fingerprint) and file-based **rate limiting** (max N per time window). |
 | [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) | Presentation layer. Renders JSON or HTML error responses. Stack traces are only exposed when `APP_DEBUG=true`. |
@@ -359,10 +384,12 @@ The query layer is split into traits by responsibility:
 |---|---|
 | [`BuildsConditions`](../src/Database/Query/Traits/BuildsConditions.php) | `where`, `orWhere`, grouped conditions, list/null/range/like helpers. |
 | [`OrdersQuery`](../src/Database/Query/Traits/OrdersQuery.php) | `orderBy`, `latest`, `oldest`, `limit`, `offset`. |
-| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `first`, `firstRequired`. |
+| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `paginate`, `first`, `firstRequired`. |
 | [`RunsAggregates`](../src/Database/Query/Traits/RunsAggregates.php) | `count`, `exists`, `sum`, `avg`, `min`, `max`. |
 
-Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()`, so pending eager loads and model hydration remain centralized in the Table Gateway.
+Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()` or `Table::paginateFromBuilder()`, so pending eager loads, pagination hydration, and model hydration remain centralized in the Table Gateway.
+
+`GreenQuery::paginate($perPage, $page, $withCount)` paginates the filtered query itself, preserving `where` conditions and ordering. When `$withCount` is `false`, [`Paginator`](../src/Pagination/Paginator.php) skips the `COUNT(*)` query and fetches one extra row internally to determine `has_next`.
 
 See [Database Querying](database-querying.md) for the user-facing API reference.
 
@@ -400,6 +427,8 @@ The framework features a custom parser ([`IncludeQueryEngine`](../src/Database/I
 Pipeline: **Raw String → Parse (AST) → Validate → Resolve (Closure constraints)**
 
 The resolved closures modify the underlying `QueryBuilder` before the relation is fetched.
+
+Nested validation supports both legacy relation arrays and modern relation DTOs returned by a protected `relations()` method. The validator resolves the related model's conventional Table class (for example, `App\Models\Comment` to `App\Tables\CommentTable`), reads its relation definitions without invoking the database-dependent Table constructor, converts `Relation` DTOs to configuration arrays, and validates the child node recursively.
 
 ---
 
@@ -493,7 +522,7 @@ Extensibility in Green is managed primarily through **Service Providers**.
 Providers extend the abstract [`ServiceProvider`](../src/Support/ServiceProvider.php) class and contain two lifecycle methods:
 
 - `register()`: Bind things into the container. Do not execute any logic or resolve other services here.
-- `boot()`: Execute bootstrap logic after all other providers have been registered.
+- `boot()`: Execute post-registration setup after all providers have registered. It is intended for real bootstrap work, not for copying resolved services into global variables.
 
 ```php
 class CustomServiceProvider extends ServiceProvider
@@ -510,7 +539,7 @@ class CustomServiceProvider extends ServiceProvider
 }
 ```
 
-This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider.
+This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider. Core helpers remain thin accessors over the Container, so `$app->make(Service::class)` and its corresponding helper cannot drift into different instances.
 
 ---
 

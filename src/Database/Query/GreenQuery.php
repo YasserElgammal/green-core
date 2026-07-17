@@ -7,6 +7,7 @@ use YasserElgammal\Green\Database\Query\Traits\BuildsConditions;
 use YasserElgammal\Green\Database\Query\Traits\FetchesResults;
 use YasserElgammal\Green\Database\Query\Traits\OrdersQuery;
 use YasserElgammal\Green\Database\Query\Traits\RunsAggregates;
+use YasserElgammal\Green\Database\Query\Traits\SelectsColumns;
 
 /**
  * Fluent query wrapper for Green tables.
@@ -20,4 +21,5 @@ class GreenQuery extends GreenQueryState
     use OrdersQuery;
     use FetchesResults;
     use RunsAggregates;
+    use SelectsColumns;
 }

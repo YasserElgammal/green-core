@@ -20,8 +20,4 @@ class DriveServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        drive_set_instance($this->app->make(Drive::class));
-    }
 }

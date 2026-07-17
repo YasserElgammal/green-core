@@ -20,8 +20,4 @@ class ConnectServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        connect_set_instance($this->app->make(Connect::class));
-    }
 }

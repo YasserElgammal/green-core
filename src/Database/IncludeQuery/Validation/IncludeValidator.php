@@ -8,6 +8,7 @@ use YasserElgammal\Green\Database\IncludeQuery\Ast\IncludeNode;
 use YasserElgammal\Green\Database\IncludeQuery\Aggregations\AggregationRegistry;
 use YasserElgammal\Green\Database\IncludeQuery\Exceptions\UnknownRelationException;
 use YasserElgammal\Green\Database\IncludeQuery\Operations\OperationRegistry;
+use YasserElgammal\Green\Database\Relations\Relation;
 
 /**
  * Validates parsed IncludeNode ASTs against a Table's relation registry.
@@ -98,20 +99,31 @@ final class IncludeValidator
             return [];
         }
 
-        // Use reflection to read the protected $relations property
+        // Read both legacy property definitions and the modern relations()
+        // method without running the Table constructor (which needs a DB).
         $reflection = new \ReflectionClass($tableClass);
+        $instance = $reflection->newInstanceWithoutConstructor();
+        $relations = [];
 
-        if (!$reflection->hasProperty('relations')) {
-            return [];
+        if ($reflection->hasProperty('relations')) {
+            $property = $reflection->getProperty('relations');
+            $property->setAccessible(true);
+            $relations = $property->getValue($instance);
         }
 
-        $property = $reflection->getProperty('relations');
+        if ($reflection->hasMethod('relations')) {
+            $method = $reflection->getMethod('relations');
+            $method->setAccessible(true);
+            $relations = array_merge($relations, $method->invoke($instance));
+        }
 
-        // Create a temporary instance to read the property value
-        $instance = $reflection->newInstanceWithoutConstructor();
-        $property->setAccessible(true);
+        foreach ($relations as $name => $relation) {
+            if ($relation instanceof Relation) {
+                $relations[$name] = $relation->toArray();
+            }
+        }
 
-        return $property->getValue($instance);
+        return $relations;
     }
 
     /**

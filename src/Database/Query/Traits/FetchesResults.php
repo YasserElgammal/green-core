@@ -17,6 +17,16 @@ trait FetchesResults
         return $this->table->fetchFromBuilder($this->preparedBuilder());
     }
 
+    /**
+     * Paginate the current query and hydrate the result rows.
+     *
+     * @return array{data: array<int, TModel>, meta: array<string, mixed>}
+     */
+    public function paginate(int $perPage = 15, int $page = 1, bool $withCount = true): array
+    {
+        return $this->table->paginateFromBuilder($this->preparedBuilder(), $perPage, $page, $withCount);
+    }
+
     /** @return TModel|null */
     public function first(): ?Model
     {

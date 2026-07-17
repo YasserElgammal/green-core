@@ -14,13 +14,4 @@ class AuthServiceProvider extends ServiceProvider
         });
     }
 
-    public function boot(): void
-    {
-        $authorizer = $this->app->make(Authorizer::class);
-
-        // Register the global helper instance
-        if (function_exists('authorizer_set_instance')) {
-            authorizer_set_instance($authorizer);
-        }
-    }
 }

@@ -10,6 +10,7 @@ use YasserElgammal\Green\Database\IncludeQuery\IncludeQueryEngine;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedAggregation;
 use YasserElgammal\Green\Database\IncludeQuery\Resolver\ResolvedInclude;
 use YasserElgammal\Green\Database\Query\GreenQuery;
+use YasserElgammal\Green\Database\Relations\Relation;
 use YasserElgammal\Green\Database\Relations\RelationRegistry;
 use YasserElgammal\Green\Pagination\Paginator;
 
@@ -53,25 +54,41 @@ class Table
     private array $pendingAggregations = [];
 
     /**
+     * Pending column selection for the next query.
+     * Empty array means SELECT * (default).
+     *
+     * @var string[]
+     */
+    private array $pendingSelect = [];
+
+    /**
      * Relation registry defined by subclasses.
      *
-     * Format:
-     * [
-     *   'posts' => [
-     *       'type'        => 'hasMany',
-     *       'model'       => Post::class,
-     *       'foreign_key' => 'user_id',
-     *       'local_key'   => 'id',
-     *   ],
-     *   'roles' => [
-     *       'type'        => 'manyToMany',
-     *       'model'       => Role::class,
-     *       'pivot'       => 'user_roles',
-     *       'foreign_key' => 'user_id',
-     *       'related_key' => 'role_id',
-     *       'local_key'   => 'id',
-     *   ],
-     * ]
+     * Recommended — use Relation DTOs (smart defaults, IDE support):
+     *
+     *   use YasserElgammal\Green\Database\Relations\BelongsTo;
+     *   use YasserElgammal\Green\Database\Relations\HasMany;
+     *   use YasserElgammal\Green\Database\Relations\ManyToMany;
+     *
+     *   protected function relations(): array
+     *   {
+     *       return [
+     *           'posts'  => new HasMany(Post::class),
+     *           'author' => new BelongsTo(User::class),
+     *           'roles'  => new ManyToMany(Role::class, pivot: 'user_roles'),
+     *       ];
+     *   }
+     *
+     * Legacy — plain arrays via property (still fully supported):
+     *
+     *   protected array $relations = [
+     *       'posts' => [
+     *           'type'        => 'hasMany',
+     *           'model'       => Post::class,
+     *           'foreign_key' => 'user_id',
+     *           'local_key'   => 'id',
+     *       ],
+     *   ];
      *
      * @var array<string, array<string, mixed>>
      */
@@ -96,6 +113,39 @@ class Table
         $this->connection  = Database::getConnection($this->connectionName);
         $this->table       = $blueprint->getTable();
         $this->primaryKey  = $blueprint->getPrimaryKey();
+
+        if (method_exists($this, 'relations')) {
+            $this->relations = array_merge($this->relations, $this->relations());
+        }
+
+        $this->resolveRelationDefaults();
+    }
+
+    /**
+     * Resolve smart defaults for relations defined via Relation DTOs.
+     *
+     * Relations created with new HasMany(), HasOne(), or ManyToMany()
+     * may have null foreignKey values when the default depends on the parent
+     * model name. This method fills those in using the blueprint class name,
+     * and then converts the DTOs into plain arrays.
+     *
+     * Relations defined with plain arrays (the old way) are untouched.
+     */
+    private function resolveRelationDefaults(): void
+    {
+        $parentSnake = Relation::classToSnake(get_class($this->blueprint));
+
+        foreach ($this->relations as $name => $config) {
+            if ($config instanceof Relation) {
+                $config->resolveDefaults($parentSnake);
+                $this->relations[$name] = $config->toArray();
+            } elseif (is_array($config) && !empty($config['_needs_defaults'])) {
+                // Support the array _needs_defaults marker just in case
+                unset($config['_needs_defaults']);
+                $config['foreign_key'] ??= $parentSnake . '_id';
+                $this->relations[$name] = $config;
+            }
+        }
     }
 
     // ─── Aggregation API ──────────────────────────────────────────────────────
@@ -594,6 +644,47 @@ class Table
         return $models;
     }
 
+    // ─── Selective Column Loading ─────────────────────────────────────────────
+
+    /**
+     * Specify which columns to select for the next query.
+     *
+     * The primary key is automatically included if not specified,
+     * to ensure hydration, dirty-tracking, and relation loading work correctly.
+     *
+     * Usage:
+     *   ->select('id', 'name', 'email')      // variadic strings
+     *   ->select(['id', 'name', 'email'])     // single array
+     *
+     * @param  string|string[]  ...$columns
+     * @return static
+     */
+    public function select(string|array ...$columns): static
+    {
+        // Normalize: flatten if a single array was passed
+        $flat = [];
+        foreach ($columns as $col) {
+            if (is_array($col)) {
+                foreach ($col as $c) {
+                    $flat[] = $c;
+                }
+            } else {
+                $flat[] = $col;
+            }
+        }
+
+        // Validate each column name
+        foreach ($flat as $column) {
+            if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$/', $column)) {
+                throw new \InvalidArgumentException("Invalid column name [{$column}].");
+            }
+        }
+
+        $this->pendingSelect = $flat;
+
+        return $this;
+    }
+
     // ─── Fluent Helpers ───────────────────────────────────────────────────────
 
     /**
@@ -642,6 +733,14 @@ class Table
         return array_map(fn($row) => (clone $this->blueprint)->fill($row)->syncOriginal(), $rows);
     }
 
+    /**
+     * Get the primary key column name for this table.
+     */
+    public function getPrimaryKey(): string
+    {
+        return $this->primaryKey;
+    }
+
     // ─── Fetch ────────────────────────────────────────────────────────────────
 
     /**
@@ -649,10 +748,11 @@ class Table
      */
     public function fetchAll(): array
     {
-        $rows = $this->newQuery()
-            ->select('*')
+        $rows = $this->builder()
             ->executeQuery()
             ->fetchAllAssociative();
+
+        $this->pendingSelect = [];
 
         return $this->loadIncludes($this->hydrate($rows));
     }
@@ -672,12 +772,13 @@ class Table
      */
     public function fetchById(int|string $id): ?Model
     {
-        $row = $this->newQuery()
-            ->select('*')
+        $row = $this->builder()
             ->where($this->primaryKey . ' = :id')
             ->setParameter('id', $id)
             ->executeQuery()
             ->fetchAssociative();
+
+        $this->pendingSelect = [];
 
         if (!$row) {
             return null;
@@ -726,12 +827,13 @@ class Table
      */
     public function fetchWhere(string $column, mixed $value): array
     {
-        $rows = $this->newQuery()
-            ->select('*')
+        $rows = $this->builder()
             ->where("{$column} = :val")
             ->setParameter('val', $value)
             ->executeQuery()
             ->fetchAllAssociative();
+
+        $this->pendingSelect = [];
 
         return $this->loadIncludes($this->hydrate($rows));
     }
@@ -741,13 +843,14 @@ class Table
      */
     public function fetchFirst(string $column, mixed $value): ?Model
     {
-        $row = $this->newQuery()
-            ->select('*')
+        $row = $this->builder()
             ->where("{$column} = :val")
             ->setParameter('val', $value)
             ->setMaxResults(1)
             ->executeQuery()
             ->fetchAssociative();
+
+        $this->pendingSelect = [];
 
         if (!$row) {
             return null;
@@ -779,7 +882,22 @@ class Table
      */
     public function builder(): QueryBuilder
     {
-        return $this->newQuery()->select('*');
+        $qb = $this->newQuery();
+
+        if (!empty($this->pendingSelect)) {
+            $columns = $this->pendingSelect;
+
+            // Auto-inject the primary key if not explicitly selected
+            if (!in_array($this->primaryKey, $columns, true)) {
+                array_unshift($columns, $this->primaryKey);
+            }
+
+            $qb->select(...$columns);
+        } else {
+            $qb->select('*');
+        }
+
+        return $qb;
     }
 
     /**
@@ -813,7 +931,6 @@ class Table
         if ($this->timestamps) {
             $now = date('Y-m-d H:i:s');
             $data['created_at'] ??= $now;
-            $data['updated_at'] ??= $now;
         }
 
         $this->connection->insert($this->table, $data);
@@ -852,9 +969,7 @@ class Table
             if ($this->timestamps) {
                 $now = date('Y-m-d H:i:s');
                 $data['created_at'] ??= $now;
-                $data['updated_at'] ??= $now;
                 $model->set('created_at', $data['created_at']);
-                $model->set('updated_at', $data['updated_at']);
             }
 
             $this->connection->insert($this->table, $data);
@@ -869,6 +984,10 @@ class Table
      */
     public function update(int|string $id, array $data): int
     {
+        if ($this->timestamps) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+
         return $this->connection->update(
             $this->table,
             $data,

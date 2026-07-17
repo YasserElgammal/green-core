@@ -2,40 +2,165 @@
 
 namespace YasserElgammal\Green\Pagination;
 
+use Doctrine\DBAL\Query\QueryBuilder;
+
 class Paginator
 {
     /**
-     * @param array|\Doctrine\DBAL\Query\QueryBuilder $items
+     * @param array|QueryBuilder $items
      * @param int $perPage
      * @param int $page
+     * @param bool $withCount
      * @return array
      */
-    public function paginate(mixed $items, int $perPage, int $page): array
+    public function paginate(mixed $items, int $perPage, int $page, bool $withCount = true): array
     {
-        if ($items instanceof \Doctrine\DBAL\Query\QueryBuilder) {
-            $countQuery = clone $items;
-            $totalItems = (int) $countQuery->select('COUNT(*)')
-                ->executeQuery()
-                ->fetchOne();
+        $perPage = max(1, $perPage);
+        $page = max(1, $page);
 
-            $totalPages = (int) ceil($totalItems / $perPage);
-            $page = max(1, min($page, $totalPages > 0 ? $totalPages : 1));
-
-            $offset = ($page - 1) * $perPage;
-            $data = $items->select('*')
-                ->setFirstResult($offset)
-                ->setMaxResults($perPage)
-                ->executeQuery()
-                ->fetchAllAssociative();
-        } else {
-            $totalItems = count($items);
-            $totalPages = (int) ceil($totalItems / $perPage);
-            $page = max(1, min($page, $totalPages > 0 ? $totalPages : 1));
-
-            $offset = ($page - 1) * $perPage;
-            $data = array_slice($items, $offset, $perPage);
+        if ($items instanceof QueryBuilder) {
+            return $this->paginateQueryBuilder($items, $perPage, $page, $withCount);
         }
 
+        return $this->paginateArray($items, $perPage, $page, $withCount);
+    }
+
+    private function paginateQueryBuilder(QueryBuilder $items, int $perPage, int $page, bool $withCount): array
+    {
+        [$totalItems, $totalPages, $page] = $this->resolveCountedMeta(
+            $withCount,
+            fn (): int => $this->countQueryBuilder($items),
+            $perPage,
+            $page
+        );
+
+        $rawData = $this->fetchQueryPage($items, $perPage, $page, $withCount);
+
+        return $this->formatResult(
+            $this->pageData($rawData, $perPage, $withCount),
+            $page,
+            $perPage,
+            $totalItems,
+            $totalPages,
+            $this->hasNextPage($rawData, $perPage, $page, $totalPages, $withCount)
+        );
+    }
+
+    /**
+     * @param array<int, mixed> $items
+     */
+    private function paginateArray(array $items, int $perPage, int $page, bool $withCount): array
+    {
+        [$totalItems, $totalPages, $page] = $this->resolveCountedMeta(
+            $withCount,
+            fn (): int => count($items),
+            $perPage,
+            $page
+        );
+
+        $rawData = array_slice($items, $this->offset($page, $perPage), $this->limit($perPage, $withCount));
+
+        return $this->formatResult(
+            $this->pageData($rawData, $perPage, $withCount),
+            $page,
+            $perPage,
+            $totalItems,
+            $totalPages,
+            $this->hasNextPage($rawData, $perPage, $page, $totalPages, $withCount)
+        );
+    }
+
+    private function countQueryBuilder(QueryBuilder $items): int
+    {
+        $countQuery = clone $items;
+
+        return (int) $countQuery
+            ->select('COUNT(*)')
+            ->setFirstResult(0)
+            ->setMaxResults(null)
+            ->resetOrderBy()
+            ->executeQuery()
+            ->fetchOne();
+    }
+
+    /**
+     * @return array{0: int|null, 1: int|null, 2: int}
+     */
+    private function resolveCountedMeta(bool $withCount, callable $counter, int $perPage, int $page): array
+    {
+        if (!$withCount) {
+            return [null, null, $page];
+        }
+
+        $totalItems = $counter();
+        $totalPages = (int) ceil($totalItems / $perPage);
+
+        return [$totalItems, $totalPages, $this->clampPage($page, $totalPages)];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchQueryPage(QueryBuilder $items, int $perPage, int $page, bool $withCount): array
+    {
+        $query = clone $items;
+
+        // Respect existing column selection; only default to * if not set
+        $selectPart = $this->getSelectParts($query);
+        if (empty($selectPart) || $selectPart === ['*']) {
+            $query->select('*');
+        }
+
+        return $query
+            ->setFirstResult($this->offset($page, $perPage))
+            ->setMaxResults($this->limit($perPage, $withCount))
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    private function clampPage(int $page, int $totalPages): int
+    {
+        return max(1, min($page, $totalPages > 0 ? $totalPages : 1));
+    }
+
+    private function offset(int $page, int $perPage): int
+    {
+        return ($page - 1) * $perPage;
+    }
+
+    private function limit(int $perPage, bool $withCount): int
+    {
+        return $withCount ? $perPage : $perPage + 1;
+    }
+
+    /**
+     * @param array<int, mixed> $rawData
+     * @return array<int, mixed>
+     */
+    private function pageData(array $rawData, int $perPage, bool $withCount): array
+    {
+        return $withCount ? $rawData : array_slice($rawData, 0, $perPage);
+    }
+
+    /**
+     * @param array<int, mixed> $rawData
+     */
+    private function hasNextPage(array $rawData, int $perPage, int $page, ?int $totalPages, bool $withCount): bool
+    {
+        return $withCount ? $page < $totalPages : count($rawData) > $perPage;
+    }
+
+    /**
+     * @param array<int, mixed> $data
+     */
+    private function formatResult(
+        array $data,
+        int $page,
+        int $perPage,
+        ?int $totalItems,
+        ?int $totalPages,
+        bool $hasNext
+    ): array {
         return [
             'data' => $data,
             'meta' => [
@@ -43,9 +168,27 @@ class Paginator
                 'per_page' => $perPage,
                 'total_items' => $totalItems,
                 'total_pages' => $totalPages,
-                'has_next' => $page < $totalPages,
-                'has_prev' => $page > 1
-            ]
+                'has_next' => $hasNext,
+                'has_prev' => $page > 1,
+            ],
         ];
+    }
+
+    /**
+     * Get the select query parts from a QueryBuilder instance.
+     * Supports both DBAL v3 (via getQueryPart) and DBAL v4 (via Reflection).
+     */
+    private function getSelectParts(QueryBuilder $qb): array
+    {
+        if (method_exists($qb, 'getQueryPart')) {
+            return $qb->getQueryPart('select') ?: [];
+        }
+
+        try {
+            $ref = new \ReflectionProperty($qb, 'select');
+            return $ref->getValue($qb);
+        } catch (\ReflectionException) {
+            return [];
+        }
     }
 }
