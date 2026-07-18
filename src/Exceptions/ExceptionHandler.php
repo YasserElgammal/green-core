@@ -7,6 +7,7 @@ use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Http\JsonResponse;
 use YasserElgammal\Green\Http\ValidationException;
+use YasserElgammal\Green\Http\HttpExceptionInterface;
 use YasserElgammal\Green\View\View;
 use YasserElgammal\Green\ErrorHandling\ErrorRecord;
 use YasserElgammal\Green\ErrorHandling\RequestContext;
@@ -24,12 +25,14 @@ class ExceptionHandler
 
     public function handle(Throwable $e, Request $request): Response
     {
+        $record = null;
+
         // Log the error through the injected LogManager (dedup prevents double-logging
         // if the error was already captured by GreenErrorKernel's global handler)
         if ($this->logManager !== null) {
             try {
                 $context = RequestContext::capture();
-                $record  = ErrorRecord::fromException($e, $context);
+                $record = ErrorRecord::fromException($e, $context);
                 $this->logManager->log($record);
             } catch (\Throwable) {
                 // Logging must never break error rendering
@@ -39,54 +42,60 @@ class ExceptionHandler
         $isDebug = $this->isDebug();
         $expectsJson = $this->expectsJson($request);
 
-        // Map specifics classes to codes
-        $statusCode = 500;
-        if ($e instanceof ValidationException) {
-            $statusCode = 422;
-        } elseif ($e->getCode() >= 400 && $e->getCode() < 600) {
-            $statusCode = $e->getCode();
-        }
+        $traceId = $record?->id ?? $this->generateTraceId();
+        $statusCode = match (true) {
+            $e instanceof HttpExceptionInterface => $e->getStatusCode(),
+            $e instanceof ValidationException => 422,
+            default => 500,
+        };
+        $headers = $e instanceof HttpExceptionInterface ? $e->getHeaders() : [];
 
         if ($expectsJson) {
-            return $this->renderJson($e, $statusCode, $isDebug);
+            $response = $this->renderJson($e, $statusCode, $isDebug, $traceId);
+        } else {
+            $response = $this->renderHtml($e, $statusCode, $isDebug, $traceId);
         }
 
-        return $this->renderHtml($e, $statusCode, $isDebug);
+        foreach ($headers as $name => $value) {
+            $response->setHeader($name, $value);
+        }
+
+        return $response;
     }
 
-    protected function renderJson(Throwable $e, int $statusCode, bool $isDebug): JsonResponse
+    protected function renderJson(Throwable $e, int $statusCode, bool $isDebug, string $traceId): JsonResponse
     {
         if ($e instanceof ValidationException) {
             return new JsonResponse([
                 'error' => 'Validation error',
                 'errors' => $e->getErrors(),
+                'trace_id' => $traceId,
             ], $statusCode);
         }
 
         $response = [
             'error' => $this->getErrorTitle($statusCode),
-            'message' => $isDebug ? $e->getMessage() : $this->cleanMessage($e->getMessage()),
+            'message' => $isDebug ? $e->getMessage() : 'An unexpected error occurred.',
+            'trace_id' => $traceId,
         ];
 
         if ($isDebug) {
             $response['file'] = $e->getFile();
             $response['line'] = $e->getLine();
             $response['trace'] = $e->getTrace();
-            // Using uniqid or a better method for a trace ID, useful for logs even if we don't log yet
-            $response['trace_id'] = uniqid('ERR_');
         }
 
         return new JsonResponse($response, $statusCode);
     }
 
-    protected function renderHtml(Throwable $e, int $statusCode, bool $isDebug): Response
+    protected function renderHtml(Throwable $e, int $statusCode, bool $isDebug, string $traceId): Response
     {
         $viewParameters = [
             'title' => $this->getErrorTitle($statusCode),
-            'message' => $isDebug ? $e->getMessage() : $this->cleanMessage($e->getMessage()),
+            'message' => $isDebug ? $e->getMessage() : 'An unexpected error occurred.',
             'debug' => $isDebug,
             'status_code' => $statusCode,
-            'trace_id' => uniqid('ERR_'),
+            'trace_id' => $traceId,
         ];
 
         if ($isDebug) {
@@ -112,7 +121,7 @@ class ExceptionHandler
 
         try {
             $content = View::render($viewName, $viewParameters);
-        } catch (\Exception $viewError) {
+        } catch (\Throwable $viewError) {
             // View rendering failed, fallback to plain text so we don't end up in an infinite loop
             $content = "Oops! Something went wrong.\n\n" . ($isDebug ? "Error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine() : "");
             return new Response($content, $statusCode, ['Content-Type' => 'text/plain']);
@@ -123,8 +132,7 @@ class ExceptionHandler
 
     protected function expectsJson(Request $request): bool
     {
-        $accept = $request->header('Accept', '');
-        if (str_contains($accept, 'application/json')) {
+        if ($request->wantsJson() || $request->isJson()) {
             return true;
         }
 
@@ -145,6 +153,15 @@ class ExceptionHandler
         }
         
         return (bool) $debug;
+    }
+
+    private function generateTraceId(): string
+    {
+        try {
+            return 'ERR_' . bin2hex(random_bytes(12));
+        } catch (\Throwable) {
+            return 'ERR_' . str_replace('.', '', uniqid('', true));
+        }
     }
 
     public function cleanMessage(string $message): string
