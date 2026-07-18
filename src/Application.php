@@ -90,12 +90,26 @@ class Application extends Container
 
     public function handle(Request $request): Response
     {
-        $exceptionHandler = $this->make(ExceptionHandler::class);
-
         try {
             return $this->router->dispatch($request);
         } catch (\Throwable $e) {
-            return $exceptionHandler->handle($e, $request);
+            try {
+                return $this->make(ExceptionHandler::class)->handle($e, $request);
+            } catch (\Throwable $handlerError) {
+                // Error rendering depends on infrastructure too (container, logger,
+                // templates), so it needs an independent last-resort response.
+                error_log(sprintf(
+                    '[Green] Exception handler failed: %s; original error: %s',
+                    $handlerError->getMessage(),
+                    $e->getMessage(),
+                ));
+
+                return new Response(
+                    'Internal Server Error',
+                    500,
+                    ['Content-Type' => 'text/plain; charset=UTF-8'],
+                );
+            }
         }
     }
 
