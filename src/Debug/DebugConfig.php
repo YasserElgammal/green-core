@@ -2,6 +2,8 @@
 
 namespace YasserElgammal\Green\Debug;
 
+use YasserElgammal\Green\Config\Environment;
+
 final class DebugConfig
 {
     public function __construct(
@@ -45,9 +47,10 @@ final class DebugConfig
 
     private static function resolveConfigFile(): string
     {
-        $configured = $_ENV['GREEN_LEAF_CONFIG']
-            ?? getenv('GREEN_LEAF_CONFIG')
-            ?: ($_ENV['LEAF_CONFIG'] ?? getenv('LEAF_CONFIG') ?: 'config/leaf.php');
+        $configured = Environment::get(
+            'GREEN_LEAF_CONFIG',
+            Environment::get('LEAF_CONFIG', 'config/leaf.php'),
+        );
 
         $configured = (string) $configured;
 
@@ -62,19 +65,11 @@ final class DebugConfig
 
     private static function envInt(string $key, int $default): int
     {
-        $value = $_ENV[$key] ?? getenv($key);
-
-        return is_numeric($value) ? (int) $value : $default;
+        return Environment::int($key, $default);
     }
 
     private static function envBool(string $key, bool $default): bool
     {
-        $value = $_ENV[$key] ?? getenv($key);
-
-        if ($value === false || $value === null || $value === '') {
-            return $default;
-        }
-
-        return in_array(strtolower((string) $value), ['1', 'true', 'yes', 'on'], true);
+        return Environment::bool($key, $default);
     }
 }

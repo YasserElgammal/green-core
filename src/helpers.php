@@ -45,7 +45,7 @@ if (!function_exists('app')) {
 if (!function_exists('config')) {
     function config(?string $key = null, mixed $default = null): mixed
     {
-        $config = app()->make('config');
+        $config = app()->make(\YasserElgammal\Green\Config\Contracts\ConfigReaderInterface::class);
         if ($key === null) {
             return $config;
         }

@@ -10,13 +10,14 @@ use YasserElgammal\Green\Routing\RateLimit\ArrayRateLimitStore;
 use YasserElgammal\Green\Routing\RateLimit\FileRateLimitStore;
 use YasserElgammal\Green\Routing\RateLimit\RateLimitStoreInterface;
 use YasserElgammal\Green\Http\Middleware\ThrottleRequests;
+use YasserElgammal\Green\Config\Contracts\ConfigReaderInterface;
 
 class RoutingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         $this->app->singleton(RateLimitStoreInterface::class, function ($app) {
-            $config = $app->make('config');
+            $config = $app->make(ConfigReaderInterface::class);
             $driver = $config->get('rate_limit.driver', 'file');
 
             if ($driver === 'array') {
@@ -40,7 +41,7 @@ class RoutingServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $router = $this->app->make(Router::class);
-        $config = $this->app->make('config');
+        $config = $this->app->make(ConfigReaderInterface::class);
 
         $router->aliasMiddleware('throttle', function (?string $maxAttempts = null, ?string $decayMinutes = null, ?string $prefix = null) use ($config) {
             return new ThrottleRequests(
