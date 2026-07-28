@@ -39,6 +39,7 @@ final class TranslatorManager
 {
     /** Singleton Translator instance for the global helpers. */
     private static ?Translator $instance = null;
+    private static ?\Closure $resolver = null;
 
     // ── Builder state ──────────────────────────────────────────
 
@@ -260,10 +261,18 @@ final class TranslatorManager
      */
     public static function getInstance(): Translator
     {
+        if (self::$instance === null && self::$resolver !== null) {
+            $translator = (self::$resolver)();
+            if (!$translator instanceof Translator) {
+                throw new \RuntimeException('Translator resolver must return a Translator instance.');
+            }
+            self::$instance = $translator;
+        }
+
         if (self::$instance === null) {
             $basePath  = defined('BASE_PATH') ? BASE_PATH : getcwd();
-            $langPath  = $_ENV['APP_LANG_PATH'] ?? 'lang';
-            $cachePath = $_ENV['APP_TRANSLATION_CACHE_PATH'] ?? null;
+            $langPath = 'lang';
+            $cachePath = null;
 
             // Resolve relative paths against the project root.
             if ($langPath !== null && !self::isAbsolutePath($langPath)) {
@@ -276,8 +285,8 @@ final class TranslatorManager
 
             // Auto-create with environment-based defaults.
             self::$instance = self::create([
-                'default_locale'  => $_ENV['APP_LOCALE'] ?? 'en',
-                'fallback_locale' => $_ENV['APP_FALLBACK_LOCALE'] ?? 'en',
+                'default_locale'  => 'en',
+                'fallback_locale' => 'en',
                 'lang_path'       => $langPath,
                 'cache_path'      => $cachePath,
             ]);
@@ -302,6 +311,14 @@ final class TranslatorManager
      */
     public static function setInstance(?Translator $translator): void
     {
+        self::$resolver = null;
         self::$instance = $translator;
+    }
+
+    /** @param callable(): Translator $resolver */
+    public static function setResolver(callable $resolver): void
+    {
+        self::$instance = null;
+        self::$resolver = \Closure::fromCallable($resolver);
     }
 }

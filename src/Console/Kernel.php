@@ -19,6 +19,9 @@ use YasserElgammal\Green\Console\Commands\{
     RouteClearCommand,
     PublishConfigCommand,
     TranslationClearCommand,
+    ConfigCacheCommand,
+    ConfigClearCommand,
+    ConfigShowCommand,
 };
 
 class Kernel
@@ -42,6 +45,9 @@ class Kernel
         RouteClearCommand::class,
         PublishConfigCommand::class,
         TranslationClearCommand::class,
+        ConfigCacheCommand::class,
+        ConfigClearCommand::class,
+        ConfigShowCommand::class,
     ];
 
     protected \YasserElgammal\Green\Application $app;

@@ -8,28 +8,28 @@ use YasserElgammal\Green\View\View;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mime\Email;
+use YasserElgammal\Green\Config\Typed\MailConfig;
 
 class MailChannel implements NotificationChannelInterface
 {
     protected Mailer $mailer;
+    private MailConfig $config;
 
-    public function __construct()
+    public function __construct(?MailConfig $config = null)
     {
-        // Simple default parsing, fallback to env vars natively
-        $host = $_ENV['MAIL_HOST'] ?? '127.0.0.1';
-        $port = $_ENV['MAIL_PORT'] ?? 1025;
-        $username = $_ENV['MAIL_USERNAME'] ?? null;
-        $password = $_ENV['MAIL_PASSWORD'] ?? null;
+        $mail = $config
+            ?? new MailConfig('127.0.0.1', 1025, null, null, 'hello@example.com', 'Example');
         
         // e.g. smtp://user:pass@smtp.example.com:25 or smtp://127.0.0.1:1025
-        if ($username && $password) {
-            $dsn = "smtp://{$username}:{$password}@{$host}:{$port}";
+        if ($mail->username && $mail->password) {
+            $dsn = sprintf('smtp://%s:%s@%s:%d', rawurlencode($mail->username), rawurlencode($mail->password), $mail->host, $mail->port);
         } else {
-            $dsn = "smtp://{$host}:{$port}";
+            $dsn = "smtp://{$mail->host}:{$mail->port}";
         }
 
         $transport = Transport::fromDsn($dsn);
         $this->mailer = new Mailer($transport);
+        $this->config = $mail;
     }
 
     public function send(object $notifiable, Notification $notification): void
@@ -47,8 +47,8 @@ class MailChannel implements NotificationChannelInterface
 
         $html = View::render($message->template, $message->data);
 
-        $fromAddress = $_ENV['MAIL_FROM_ADDRESS'] ?? 'hello@example.com';
-        $fromName = $_ENV['MAIL_FROM_NAME'] ?? 'Example';
+        $fromAddress = $this->config->fromAddress;
+        $fromName = $this->config->fromName;
 
         $email = (new Email())
             ->from("{$fromName} <{$fromAddress}>")

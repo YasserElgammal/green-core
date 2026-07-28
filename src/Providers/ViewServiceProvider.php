@@ -4,26 +4,26 @@ namespace YasserElgammal\Green\Providers;
 
 use YasserElgammal\Green\Support\ServiceProvider;
 use YasserElgammal\Green\View\View;
+use YasserElgammal\Green\View\ViewRenderer;
+use YasserElgammal\Green\Config\Typed\ViewConfig;
 
 class ViewServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->singleton(ViewRenderer::class, function ($app) {
+            $settings = $app->make(ViewConfig::class);
+
+            return new ViewRenderer(
+                $settings->path,
+                $settings->cache ? $settings->cachePath : null,
+                $settings->debug,
+            );
+        });
     }
 
     public function boot(): void
     {
-        $config = $this->app->make('config');
-        $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
-
-        $viewsPath = $config->get('view.path', $basePath . '/views');
-        $cachePath = $config->get('view.cache_path', $basePath . '/storage/cache/views');
-        $debug = $config->get('app.debug', false);
-
-        if (!$config->get('view.cache', false)) {
-            $cachePath = null;
-        }
-
-        View::init($viewsPath, $cachePath, $debug);
+        View::setResolver(fn () => $this->app->make(ViewRenderer::class));
     }
 }

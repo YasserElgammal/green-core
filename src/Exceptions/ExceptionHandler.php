@@ -12,6 +12,7 @@ use YasserElgammal\Green\View\View;
 use YasserElgammal\Green\ErrorHandling\ErrorRecord;
 use YasserElgammal\Green\ErrorHandling\RequestContext;
 use YasserElgammal\Green\Logging\LogManager;
+use YasserElgammal\Green\Config\Typed\ApplicationConfig;
 
 class ExceptionHandler
 {
@@ -20,6 +21,7 @@ class ExceptionHandler
      */
     public function __construct(
         private ?LogManager $logManager = null,
+        private ?ApplicationConfig $config = null,
     ) {
     }
 
@@ -146,13 +148,7 @@ class ExceptionHandler
 
     protected function isDebug(): bool
     {
-        $debug = $_ENV['APP_DEBUG'] ?? false;
-        
-        if (is_string($debug)) {
-            return strtolower($debug) === 'true' || $debug === '1';
-        }
-        
-        return (bool) $debug;
+        return $this->config?->debug ?? false;
     }
 
     private function generateTraceId(): string

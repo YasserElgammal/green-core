@@ -9,6 +9,7 @@
 
 1. [Why Green Exists](#1-why-green-exists)
 2. [Bootstrap Process](#2-bootstrap-process)
+   - [Configuration Architecture](#configuration-architecture)
 3. [Application Lifecycle](#3-application-lifecycle)
 4. [Request Lifecycle Diagram](#4-request-lifecycle-diagram)
 5. [Service Container Internals](#5-service-container-internals)
@@ -66,15 +67,246 @@ The framework employs a minimalist, explicit architecture. Unlike heavy framewor
 The framework bootstrapping is initiated in the [`Application`](../src/Application.php) class constructor.
 
 ```text
-new Application()
-  ├── loadConfiguration()      → Loads all PHP files from `config/` via ConfigRepository
-  ├── registerCoreProviders()  → Registers Service Providers (Log, Error, Drive, Connect, Routing, Validation, View)
-  └── bootProviders()          → Calls boot() on all registered providers
+new Application(overrides, basePath, configDefinitions)
+  ├── ConfigServiceProvider::bootstrap()
+  │   ├── Build DefinitionRegistry
+  │   ├── ConfigManager::load()
+  │   ├── ConfigManager::lock()
+  │   ├── Bind narrow config contracts
+  │   └── Bind immutable typed configuration objects
+  ├── registerCoreProviders()
+  ├── registerConfiguredProviders()
+  ├── bootProviders()
+  └── Resolve Router
 ```
 
-1. **`loadConfiguration()`** — Initializes the [`ConfigRepository`](../src/Config/Repository.php) and loads all `.php` files from the `config/` directory. The config is bound to the container and accessible via the `config()` helper.
-2. **`registerCoreProviders()`** — Binds fundamental framework services into the Container via Service Providers.
-3. **`bootProviders()`** — Executes post-registration setup after every provider has registered its bindings. For example, the View provider configures Twig and the Error provider installs PHP handlers. Service helpers do not keep separate global copies; they resolve their services from the Container.
+1. **Configuration bootstrap** — [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) assembles definitions and sources, loads and locks the resulting snapshot, then binds its read contract and typed settings before any runtime provider is registered.
+2. **Core provider registration** — Fundamental services are bound without reading `$_ENV`, PHP config files, or global state directly.
+3. **Configured provider registration** — Additional providers are read from the immutable [`ApplicationConfig`](../src/Config/Typed/ApplicationConfig.php).
+4. **Provider boot** — Post-registration work runs after every binding exists. Examples include initializing Twig, installing error handlers, and publishing the configured `Translator`.
+
+### Configuration Architecture
+
+The configuration subsystem turns defaults, environment variables, project files,
+cache snapshots, and test overrides into one immutable runtime
+configuration. Runtime services never read `$_ENV`, call `getenv()`, or load
+individual PHP files.
+
+#### Design goals
+
+- **One effective configuration snapshot** for the entire application.
+- **Deterministic precedence** between configuration sources.
+- **No configuration drift** between the repository and resolved singletons.
+- **Narrow dependencies** through read, mutation, and lifecycle contracts.
+- **Module extensibility** without editing `Application`.
+- **Safe diagnostics** that redact credentials and tokens.
+- **Production caching** with compatibility fingerprints.
+
+Semantic configuration validation is intentionally not part of this release.
+PHP sources must return arrays and mapped environment values are cast by their
+source definitions, but domain constraints such as port ranges or email formats
+remain the responsibility of the consuming subsystem. The proposed future design
+is preserved in the [future configuration validation plan](plans/config-validation.md).
+
+#### Main components
+
+| Component | Responsibility |
+|---|---|
+| [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) | Composition root for the configuration subsystem. Creates and locks the snapshot, then binds the read contract, manager, registry, redactor, cache, and typed configuration objects. |
+| [`ConfigManager`](../src/Config/ConfigManager.php) | Enforces loading and locking in the correct order. |
+| [`DefinitionRegistry`](../src/Config/DefinitionRegistry.php) | Aggregates defaults and environment mappings from registered modules. |
+| [`ConfigDefinitionInterface`](../src/Config/Contracts/ConfigDefinitionInterface.php) | Contract implemented by every configuration module. |
+| [`Loader`](../src/Config/Loader.php) | Executes configuration sources in precedence order and merges their results. |
+| [`Repository`](../src/Config/Repository.php) | Stores the effective nested configuration and provides dot-notation access. It does not read files, environment variables, or cache files. |
+| [`ConfigCache`](../src/Config/ConfigCache.php) | Writes and clears the generated PHP snapshot and verifies its definition fingerprint. |
+| [`SecretRedactor`](../src/Config/Security/SecretRedactor.php) | Produces a safe diagnostic copy with passwords, secrets, tokens, API keys, and private keys masked. |
+
+#### Source precedence
+
+When no compatible cache exists, [`ConfigManager`](../src/Config/ConfigManager.php)
+builds the snapshot in this order:
+
+```text
+Framework/module defaults
+        ↓ overridden by
+Mapped environment variables
+        ↓ overridden by
+Project config/*.php files
+        ↓ overridden by
+Application constructor overrides
+```
+
+The concrete source strategies are:
+
+| Source | Purpose |
+|---|---|
+| [`ArraySource`](../src/Config/Sources/ArraySource.php) | Defaults and explicit runtime/test overrides. |
+| [`EnvironmentSource`](../src/Config/Sources/EnvironmentSource.php) | Reads only explicitly mapped variables and casts supported scalar types. |
+| [`PhpDirectorySource`](../src/Config/Sources/PhpDirectorySource.php) | Loads named arrays from the consumer application's `config/` directory. |
+| [`PhpFileSource`](../src/Config/Sources/PhpFileSource.php) | Loads a compatible cache snapshot. |
+
+Environment access is isolated in [`Environment`](../src/Config/Environment.php).
+An environment variable has no effect unless a registered definition maps it to
+a configuration key.
+
+When a compatible cache exists, it replaces defaults, environment, and project
+files as the base snapshot. Constructor overrides are still applied last:
+
+```text
+Compatible cached snapshot → constructor overrides
+```
+
+#### Merge semantics
+
+[`Merger`](../src/Config/Merger.php) distinguishes maps from lists:
+
+- associative arrays merge recursively;
+- lists are replaced as complete values;
+- scalar values replace previous values.
+
+This prevents numeric arrays such as service providers or middleware from being
+accidentally combined by index.
+
+```php
+// Defaults
+['app' => ['providers' => [CoreProvider::class], 'locale' => 'en']]
+
+// Override
+['app' => ['providers' => [CustomProvider::class]]]
+
+// Result: locale is retained, provider list is replaced
+['app' => ['providers' => [CustomProvider::class], 'locale' => 'en']]
+```
+
+#### Definitions and module extension
+
+Each configuration module implements
+[`ConfigDefinitionInterface`](../src/Config/Contracts/ConfigDefinitionInterface.php):
+
+```php
+final class BillingConfigDefinition implements ConfigDefinitionInterface
+{
+    public function defaults(string $basePath): array
+    {
+        return ['billing' => ['currency' => 'USD']];
+    }
+
+    public function environmentMap(): array
+    {
+        return [
+            'billing.currency' => ['env' => 'BILLING_CURRENCY'],
+        ];
+    }
+
+}
+```
+
+It is registered at the composition boundary:
+
+```php
+$app = new Application(
+    basePath: dirname(__DIR__),
+    configDefinitions: [new BillingConfigDefinition()],
+);
+```
+
+[`CoreDefinitions`](../src/Config/CoreDefinitions.php) registers the built-in
+application, database, mail, and infrastructure definitions. Adding another
+definition does not require editing `Application`, `ConfigManager`, or `Loader`.
+
+#### Lifecycle and immutability
+
+The manager enforces a strict state machine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Collecting
+    Collecting --> Loaded: load()
+    Loaded --> Locked: lock()
+    Locked --> [*]
+```
+
+Invalid transitions throw `ConfigurationException`. Once locked, `set()` and
+`merge()` also throw. Overrides must therefore be supplied before provider
+registration:
+
+```php
+$app = new Application(
+    configOverrides: ['app' => ['debug' => true]],
+    basePath: dirname(__DIR__),
+);
+```
+
+This rule guarantees that a resolved `ConnectionPool`, mail transport, logger, or
+cache manager cannot retain settings different from the repository snapshot.
+
+#### Contracts and dependency direction
+
+The subsystem follows Interface Segregation:
+
+| Contract | Capability | Intended consumer |
+|---|---|---|
+| [`ConfigReaderInterface`](../src/Config/Contracts/ConfigReaderInterface.php) | `get`, `has`, `all` | Read-only consumers and diagnostic commands. |
+| [`MutableConfigInterface`](../src/Config/Contracts/MutableConfigInterface.php) | Read plus `set`, `merge` | Internal repository/manager composition only; it is not bound for runtime services. |
+| [`LockableConfigInterface`](../src/Config/Contracts/LockableConfigInterface.php) | `lock`, `isLocked` | Internal lifecycle management only; it is not bound for runtime services. |
+| [`ConfigRedactorInterface`](../src/Config/Contracts/ConfigRedactorInterface.php) | Safe diagnostic transformation | `config:show` and observability tools. |
+
+Infrastructure services normally receive immutable typed objects instead of the
+whole repository:
+
+```text
+DatabaseServiceProvider  → DatabaseConfig → ConnectionPool
+LogServiceProvider       → LoggingConfig  → LogManager
+ViewServiceProvider      → ViewConfig     → Twig
+ErrorServiceProvider     → ApplicationConfig → ExceptionHandler
+TranslationServiceProvider → TranslationConfig → Translator
+```
+
+The available typed objects live under
+[`Config/Typed`](../src/Config/Typed). This keeps configuration key knowledge at
+the composition boundary and gives runtime services type-safe values.
+
+#### Cache model
+
+`config:cache` writes `bootstrap/cache/config.php` with:
+
+```php
+[
+    '_meta' => [
+        'format' => 1,
+        'generated_at' => '...',
+        'fingerprint' => '...',
+    ],
+    'config' => [
+        // merged and locked snapshot
+    ],
+]
+```
+
+The fingerprint covers registered definition classes, defaults, and environment
+mappings. A cache generated for different definitions is ignored.
+Writes use a temporary file, restrictive permissions where supported, and a
+backup/restore activation sequence.
+
+Configuration cache commands:
+
+```text
+green config:show
+green config:cache
+green config:clear
+```
+
+`config:show` always uses the redactor and never prints raw secret values.
+
+#### Architectural enforcement
+
+The configuration architecture is protected by automated tests:
+
+- direct `$_ENV` and `getenv()` access is allowed only in `Config\Environment`;
+- runtime code cannot resolve a string service named `config`;
+- global application state is confined to `Application` and helper boundaries;
+- source precedence, merge behavior, lifecycle transitions, cache fingerprints,
+  and secret redaction are covered independently.
 
 ---
 
@@ -271,7 +503,7 @@ graph TD
 | [`GreenErrorKernel`](../src/ErrorHandling/GreenErrorKernel.php) | Central orchestrator. Idempotently registers `set_exception_handler`, `set_error_handler`, and `register_shutdown_function`. Includes `isHandling` loop prevention and `unregister()` to restore the previous PHP handlers when an application/test lifecycle ends. |
 | [`ErrorRecord`](../src/ErrorHandling/ErrorRecord.php) | Immutable value object. Every error (exception, PHP warning, fatal) is normalized into a standardized shape: ID, message, trace, request context, fingerprint. |
 | [`LogManager`](../src/Logging/LogManager.php) | Dispatches `ErrorRecord` to all eligible drivers. Features per-request **deduplication** (max N logs per fingerprint) and file-based **rate limiting** (max N per time window). |
-| [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) | Presentation layer. Renders JSON or HTML error responses. Stack traces are only exposed when `APP_DEBUG=true`. |
+| [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) | Presentation layer. Renders JSON or HTML error responses. Stack traces are only exposed when the validated `ApplicationConfig::debug` value is enabled. |
 
 ### Logging Drivers
 
@@ -529,7 +761,17 @@ class CustomServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(MyService::class, fn($app) => new MyService($app->make('config')));
+        $this->app->singleton(
+            MyServiceConfig::class,
+            fn ($app) => MyServiceConfig::fromRepository(
+                $app->make(ConfigReaderInterface::class),
+            ),
+        );
+
+        $this->app->singleton(
+            MyService::class,
+            fn ($app) => new MyService($app->make(MyServiceConfig::class)),
+        );
     }
 
     public function boot(): void

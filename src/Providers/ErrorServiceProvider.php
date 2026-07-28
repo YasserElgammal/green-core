@@ -6,6 +6,7 @@ use YasserElgammal\Green\Support\ServiceProvider;
 use YasserElgammal\Green\ErrorHandling\GreenErrorKernel;
 use YasserElgammal\Green\Exceptions\ExceptionHandler;
 use YasserElgammal\Green\Logging\LogManager;
+use YasserElgammal\Green\Config\Typed\ApplicationConfig;
 
 class ErrorServiceProvider extends ServiceProvider
 {
@@ -16,7 +17,10 @@ class ErrorServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(ExceptionHandler::class, function ($app) {
-            return new ExceptionHandler($app->make(LogManager::class));
+            return new ExceptionHandler(
+                $app->make(LogManager::class),
+                $app->make(ApplicationConfig::class),
+            );
         });
     }
 

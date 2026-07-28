@@ -2,13 +2,24 @@
 
 namespace YasserElgammal\Green\Config;
 
-class Repository
+use YasserElgammal\Green\Config\Contracts\MutableConfigInterface;
+use YasserElgammal\Green\Config\Contracts\LockableConfigInterface;
+use YasserElgammal\Green\Config\Exceptions\ConfigurationException;
+
+class Repository implements MutableConfigInterface, LockableConfigInterface
 {
     protected array $items = [];
+    private bool $locked = false;
 
     public function __construct(array $items = [])
     {
         $this->items = $items;
+    }
+
+    public function merge(array $items): void
+    {
+        $this->assertMutable();
+        $this->items = Merger::merge($this->items, $items);
     }
 
     public function get(string $key, mixed $default = null): mixed
@@ -36,6 +47,8 @@ class Repository
 
     public function set(string $key, mixed $value): void
     {
+        $this->assertMutable();
+        $this->assertValidKey($key);
         $keys = explode('.', $key);
         $array = &$this->items;
 
@@ -58,8 +71,8 @@ class Repository
 
     public function has(string $key): bool
     {
-        $default = microtime(true);
-        return $this->get($key, $default) !== $default;
+        $sentinel = new \stdClass();
+        return $this->get($key, $sentinel) !== $sentinel;
     }
 
     public function all(): array
@@ -67,21 +80,27 @@ class Repository
         return $this->items;
     }
 
-    public function loadDirectory(string $path): void
+    public function lock(): void
     {
-        if (!is_dir($path)) {
-            return;
+        $this->locked = true;
+    }
+
+    public function isLocked(): bool
+    {
+        return $this->locked;
+    }
+
+    private function assertMutable(): void
+    {
+        if ($this->locked) {
+            throw new ConfigurationException('Configuration is locked after application boot.');
         }
+    }
 
-        $files = glob($path . '/*.php');
-
-        if ($files === false) {
-            return;
-        }
-
-        foreach ($files as $file) {
-            $name = basename($file, '.php');
-            $this->set($name, require $file);
+    private function assertValidKey(string $key): void
+    {
+        if ($key === '' || str_starts_with($key, '.') || str_ends_with($key, '.') || str_contains($key, '..')) {
+            throw new ConfigurationException("Invalid configuration key [{$key}].");
         }
     }
 }

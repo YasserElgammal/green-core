@@ -98,26 +98,4 @@ class ConnectionPool
         return DriverManager::getConnection($params);
     }
 
-    /**
-     * Build a ConnectionPool from environment variables (backward compat).
-     *
-     * This mirrors the original Database::getConnection() behavior so that
-     * applications without a database config file still work.
-     */
-    public static function fromEnvironment(): self
-    {
-        return new self([
-            'default' => 'mysql',
-            'connections' => [
-                'mysql' => [
-                    'dbname'   => $_ENV['DB_NAME']     ?? 'green_framework',
-                    'user'     => $_ENV['DB_USER']     ?? 'root',
-                    'password' => $_ENV['DB_PASSWORD'] ?? '',
-                    'host'     => $_ENV['DB_HOST']     ?? '127.0.0.1',
-                    'port'     => (int) ($_ENV['DB_PORT'] ?? 3306),
-                    'driver'   => $_ENV['DB_DRIVER']   ?? 'pdo_mysql',
-                ],
-            ],
-        ]);
-    }
 }

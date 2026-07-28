@@ -3,7 +3,7 @@
 namespace YasserElgammal\Green;
 
 use YasserElgammal\Green\Container\Container;
-use YasserElgammal\Green\Config\Repository as ConfigRepository;
+use YasserElgammal\Green\Config\Typed\ApplicationConfig;
 use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Routing\Router;
@@ -13,15 +13,22 @@ use YasserElgammal\Green\Support\ServiceProvider;
 class Application extends Container
 {
     private array $providers = [];
+    private string $basePath;
     public Router $router;
 
-    public function __construct()
+    public function __construct(
+        array $configOverrides = [],
+        ?string $basePath = null,
+        iterable $configDefinitions = [],
+    )
     {
+        $this->basePath = $this->resolveBasePath($basePath);
+
         $this->instance(Application::class, $this);
         $this->instance(Container::class, $this);
         $GLOBALS['__green_app'] = $this;
 
-        $this->loadConfiguration();
+        $this->loadConfiguration($configOverrides, $configDefinitions);
         $this->registerCoreProviders();
         $this->registerConfiguredProviders();
         $this->bootProviders();
@@ -29,17 +36,25 @@ class Application extends Container
         $this->router = $this->make(Router::class);
     }
 
-    private function loadConfiguration(): void
+    private function loadConfiguration(array $overrides, iterable $configDefinitions = []): void
     {
-        $config = new ConfigRepository();
-        
-        $basePath = defined('BASE_PATH') ? rtrim(constant('BASE_PATH'), '/\\') : (getcwd() ?: '.');
-        $configPath = $this->resolveEnv('CONFIG_DIR', $basePath . DIRECTORY_SEPARATOR . 'config');
-        
-        $config->loadDirectory($configPath);
-        
-        $this->instance('config', $config);
-        $this->instance(ConfigRepository::class, $config);
+        (new \YasserElgammal\Green\Providers\ConfigServiceProvider($this))
+            ->bootstrap($overrides, $configDefinitions);
+    }
+
+    /**
+     * Return the consumer application's root directory.
+     *
+     * Passing the path explicitly is preferred. BASE_PATH and the current
+     * working directory are supported composition-root conventions.
+     */
+    private function resolveBasePath(?string $basePath): string
+    {
+        $path = $basePath
+            ?? (defined('BASE_PATH') ? (string) constant('BASE_PATH') : null)
+            ?? (getcwd() ?: '.');
+
+        return rtrim($path, '/\\');
     }
 
     private function registerCoreProviders(): void
@@ -52,6 +67,7 @@ class Application extends Container
             \YasserElgammal\Green\Providers\RoutingServiceProvider::class,
             \YasserElgammal\Green\Providers\ValidationServiceProvider::class,
             \YasserElgammal\Green\Providers\ViewServiceProvider::class,
+            \YasserElgammal\Green\Providers\TranslationServiceProvider::class,
             \YasserElgammal\Green\Providers\SignalServiceProvider::class,
             \YasserElgammal\Green\Providers\AuthServiceProvider::class,
             \YasserElgammal\Green\Providers\DatabaseServiceProvider::class,
@@ -65,10 +81,9 @@ class Application extends Container
 
     private function registerConfiguredProviders(): void
     {
-        $config = $this->make('config');
-        $providers = $config->get('app.providers', []);
+        $settings = $this->make(ApplicationConfig::class);
 
-        foreach ($providers as $provider) {
+        foreach ($settings->providers as $provider) {
             if (class_exists($provider)) {
                 $this->register(new $provider($this));
             }
@@ -113,14 +128,9 @@ class Application extends Container
         }
     }
 
-    private function resolveEnv(string $key, string $default): string
+    public function basePath(string $path = ''): string
     {
-        if (!empty($_ENV[$key])) {
-            return $_ENV[$key];
-        }
-
-        $value = getenv($key);
-        return ($value !== false && $value !== '') ? $value : $default;
+        return $this->basePath . ($path === '' ? '' : DIRECTORY_SEPARATOR . ltrim($path, '/\\'));
     }
 
     // --- Backward Compatibility Methods ---

@@ -21,7 +21,7 @@ class Database
     private static ?Connection $legacyConnection = null;
 
     /**
-     * Return the active connection, creating it from pool or env if needed.
+     * Return the active connection from the configured pool.
      */
     public static function getConnection(?string $name = null): Connection
     {
@@ -39,8 +39,9 @@ class Database
     public static function getPool(): ConnectionPool
     {
         if (static::$pool === null) {
-            // Fallback: build pool from env vars (backward compat)
-            static::$pool = ConnectionPool::fromEnvironment();
+            throw new \RuntimeException(
+                'Database connection pool has not been initialized. Boot the application first.',
+            );
         }
 
         return static::$pool;
