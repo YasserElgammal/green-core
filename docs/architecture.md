@@ -670,9 +670,9 @@ The session layer is a thin, ergonomic wrapper around Symfony's `HttpFoundation\
 
 | Component | Role |
 |---|---|
-| [`SessionManager`](../src/Session/SessionManager.php) | Wraps `Symfony\Component\HttpFoundation\Session\Session`. Auto-starts the session on construction. |
+| [`SessionManager`](../src/Session/SessionManager.php) | Wraps `Symfony\Component\HttpFoundation\Session\Session`. Starts lazily on first session operation and is shared through the application container. |
 
-**Key operations:** `get()`, `put()`, `has()`, `forget()`, `flush()`, `flash()`, `getFlash()`, `regenerateId()`.
+**Key operations:** `start()`, `isStarted()`, `get()`, `put()`, `has()`, `forget()`, `flush()`, `flash()`, `getFlash()`, `regenerateId()`, `invalidate()`.
 
 Flash data uses Symfony's `FlashBag` — values are automatically removed after being read once.
 
