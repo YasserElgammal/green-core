@@ -70,6 +70,7 @@ class Application extends Container
             \YasserElgammal\Green\Providers\TranslationServiceProvider::class,
             \YasserElgammal\Green\Providers\SignalServiceProvider::class,
             \YasserElgammal\Green\Providers\AuthServiceProvider::class,
+            \YasserElgammal\Green\Providers\SessionServiceProvider::class,
             \YasserElgammal\Green\Providers\DatabaseServiceProvider::class,
             \YasserElgammal\Green\Providers\CacheServiceProvider::class,
         ];

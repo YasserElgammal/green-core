@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.0] - 2026-09-02
+
+### Added
+- Added `SessionServiceProvider` to register `SessionManager` as an application-owned singleton.
+- Added explicit `start()`, `isStarted()`, and `invalidate()` session lifecycle operations.
+- Added session lifecycle and session-fixation regression tests.
+
+### Changed
+- Sessions now start lazily on the first operation instead of during `SessionManager` construction.
+- Updated the `session()` helper to resolve the same container-owned `SessionManager` instance used by dependency injection.
+
+### Security
+- Added session invalidation that clears session data and rotates the session identifier.
+- Verified that session identifier regeneration prevents session fixation while preserving authenticated session data.
+
+### Upgrade Notes
+- Initialize `Application` before calling `session()`; the helper now resolves its instance from the application container.
+
+## [2.4.0] - 2026-07-28
+
+### Added
+- Added centralized configuration loading with ordered sources, recursive merging, immutable runtime snapshots, and cache fingerprints.
+- Added typed configuration objects for application, cache, database, logging, mail, translation, and view services.
+- Added configuration definitions, environment mappings, secret redaction, and extension through custom definitions.
+- Added `config:cache`, `config:clear`, and `config:show` console commands.
+- Added focused configuration architecture, lifecycle, cache, command, and lazy-service tests.
+- Added `firebase/php-jwt` as an explicit runtime dependency.
+
+### Changed
+- Updated `Application` to bootstrap configuration before registering runtime providers.
+- Updated runtime providers and services to consume container-owned typed configuration instead of reading project configuration directly.
+- Made view and translation services resolve lazily through the application container.
+- Expanded the internal architecture documentation for configuration precedence, immutability, caching, and dependency boundaries.
+
+### Security
+- Added redaction for sensitive configuration values shown through diagnostics and console output.
+
+## [2.3.1] - 2026-07-18
+
+### Added
+- Added HTTP exception contracts and trace identifiers for error responses.
+- Added application-boundary and exception-handler regression coverage.
+
+### Changed
+- Strengthened the application exception boundary with an independent emergency response when the configured exception handler fails.
+- Improved exception rendering while preserving safe production responses.
+
 ## [2.3.0] - 2026-07-18
 
 ### Added

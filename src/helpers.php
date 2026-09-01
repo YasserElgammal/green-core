@@ -143,11 +143,7 @@ if (!function_exists('view')) {
 if (!function_exists('session')) {
     function session(): SessionManager
     {
-        static $session = null;
-        if ($session === null) {
-            $session = new SessionManager();
-        }
-        return $session;
+        return app(SessionManager::class);
     }
 }
 
