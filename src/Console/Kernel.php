@@ -22,6 +22,7 @@ use YasserElgammal\Green\Console\Commands\{
     ConfigCacheCommand,
     ConfigClearCommand,
     ConfigShowCommand,
+    ViewClearCommand,
 };
 
 class Kernel
@@ -48,6 +49,7 @@ class Kernel
         ConfigCacheCommand::class,
         ConfigClearCommand::class,
         ConfigShowCommand::class,
+        ViewClearCommand::class,
     ];
 
     protected \YasserElgammal\Green\Application $app;
