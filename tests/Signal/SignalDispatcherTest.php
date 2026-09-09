@@ -3,6 +3,8 @@
 namespace YasserElgammal\Green\Tests\Signal;
 
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use YasserElgammal\Green\Container\Container;
 use YasserElgammal\Green\Signal\SignalDispatcher;
 
 class SignalDispatcherTest extends TestCase
@@ -81,4 +83,52 @@ class SignalDispatcherTest extends TestCase
         $this->dispatcher->forget('test.event');
         $this->assertFalse($this->dispatcher->hasListeners('test.event'));
     }
+
+    public function test_it_resolves_invokable_listener_classes_from_the_container(): void
+    {
+        $container = new Container();
+        $container->instance(SignalListenerDependency::class, new SignalListenerDependency('resolved'));
+        $dispatcher = new SignalDispatcher(fn (string $listener) => $container->make($listener));
+        $dispatcher->listen('container.listener', ContainerResolvedSignalListener::class);
+
+        self::assertSame(
+            ['resolved:42'],
+            $dispatcher->emit('container.listener', ['id' => 42]),
+        );
+    }
+
+    public function test_it_rejects_a_listener_class_that_is_not_callable(): void
+    {
+        $container = new Container();
+        $dispatcher = new SignalDispatcher(fn (string $listener) => $container->make($listener));
+        $dispatcher->listen('invalid.listener', NonCallableSignalListener::class);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('must be callable');
+
+        $dispatcher->emit('invalid.listener');
+    }
+}
+
+final readonly class SignalListenerDependency
+{
+    public function __construct(public string $value)
+    {
+    }
+}
+
+final readonly class ContainerResolvedSignalListener
+{
+    public function __construct(private SignalListenerDependency $dependency)
+    {
+    }
+
+    public function __invoke(array $payload): string
+    {
+        return $this->dependency->value . ':' . $payload['id'];
+    }
+}
+
+final class NonCallableSignalListener
+{
 }

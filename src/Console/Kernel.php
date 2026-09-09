@@ -59,7 +59,9 @@ class Kernel
         // Boot the main application (loads config, registers providers)
         $this->app = new \YasserElgammal\Green\Application();
 
-        $consoleApp = new Application();
+        $consoleApp = new Application(
+            $this->app->make(\YasserElgammal\Green\Signal\SignalDispatcher::class),
+        );
 
         foreach ($this->coreCommands as $command) {
             $consoleApp->addCommand($this->app->make($command));

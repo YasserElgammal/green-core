@@ -50,6 +50,10 @@ final class ViewRenderer
             'trans_choice',
             fn (string $key, int $count, array $replace = [], ?string $locale = null) => trans_choice($key, $count, $replace, $locale),
         ));
+        $this->twig->addFunction(new TwigFunction(
+            'route',
+            fn (string $name, array $parameters = []): string => route($name, $parameters),
+        ));
         $this->twig->addFunction(new TwigFunction('current_route', fn () => Request::capture()->getPath()));
         $this->twig->addFunction(new TwigFunction('csrf_token', function (): array {
             return $this->csrfManager()->generate();

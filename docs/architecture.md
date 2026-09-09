@@ -411,6 +411,12 @@ The public [`Router`](../src/Routing/Router.php) remains the facade for applicat
 
 The [`UrlGenerator`](../src/Routing/UrlGenerator.php) handles reverse-routing. By calling `route('users.show', ['id' => 5])`, the framework extracts the URI pattern, replaces placeholders, and builds the full URL automatically without hardcoding paths in views.
 
+The same helper is available as a Twig function. Pass route parameters with Twig's mapping syntax:
+
+```twig
+<a href="{{ route('users.show', {id: user.id}) }}">View user</a>
+```
+
 ### Dispatch Flow
 
 1. [`RouteMatcher`](../src/Routing/RouteMatcher.php) compiles registered routes into a FastRoute dispatcher, using cached dispatchers when route caching is enabled.
@@ -705,9 +711,12 @@ graph LR
 ```
 
 - **Explicit registration**: Register synchronous listeners with `signal()->listen('event.name', $listener, $priority)`. Lower priority numbers execute first.
+- **Container-resolved listeners**: Invokable listener class names are resolved through the application container, including their constructor dependencies.
 - **Global helper**: Emit a signal with `signal()->emit('user.registered', ['user' => $user])` and collect listener return values.
 - **Propagation control**: Returning `false` from a listener stops dispatch to the remaining listeners.
 - **SignalAware**: Classes can use the `SignalAware` trait to emit class-prefixed domain signals.
+
+Framework lifecycle names are defined by `LifecycleSignals`: `request.received`, `request.handled`, `exception.occurred`, `command.starting`, and `command.finished`. HTTP payloads expose the request plus the resulting response or exception. Console payloads expose the command name, input, exit code, duration, and the thrown exception when applicable.
 
 Signal dispatch is synchronous. The current implementation does not provide attribute-based listener discovery or an asynchronous queue.
 
@@ -786,6 +795,42 @@ class CustomServiceProvider extends ServiceProvider
 This architecture ensures a clean, predictable bootstrapping phase. Domain managers (like `DriveManager` and `TranslatorManager`) can also be extended directly within the `boot()` method of a provider. Core helpers remain thin accessors over the Container, so `$app->make(Service::class)` and its corresponding helper cannot drift into different instances.
 
 ---
+
+## 19. Performance Optimizations
+
+Green keeps request startup predictable by loading configuration once, registering providers in a fixed order, and resolving shared services lazily from the application container. Singleton bindings prevent repeated construction of managers and infrastructure clients during one application lifecycle.
+
+Production deployments can reduce repeated parsing and compilation work through two independent caches:
+
+- **Configuration cache** compiles the merged configuration into one PHP file. The `config:cache` and `config:clear` commands manage it.
+- **View cache** lets Twig store compiled templates under the configured `view.cache` path. The `view:clear` command removes those compiled templates.
+
+Route matching can also use a compiled dispatcher cache. These caches contain derived data only and can be rebuilt from application configuration, route attributes, and Twig templates.
+
+---
+
+## 20. View System (Twig Integration)
+
+[`View`](../src/View/View.php) provides the static application-facing entry point, while [`ViewRenderer`](../src/View/ViewRenderer.php) owns the Twig environment. The view service provider configures template paths, cache behavior, debugging, and automatic reload from the typed view configuration.
+
+Framework helpers exposed to Twig include translation, CSRF, current-route inspection, and named-route URL generation. Named routes use Twig mapping syntax for parameters:
+
+```twig
+<a href="{{ route('users.show', {id: user.id}) }}">View user</a>
+```
+
+The function delegates to the same [`UrlGenerator`](../src/Routing/UrlGenerator.php) used by the PHP `route()` helper, so route definitions remain the single source of URL paths.
+
+---
+
+## 21. Security Internals (CSRF)
+
+Green uses a session-backed double-token pair for CSRF protection. Templates generate the hidden fields through `csrf_field()`, and [`CsrfMiddleware`](../src/Http/Middleware/CsrfMiddleware.php) validates unsafe requests before they reach controllers.
+
+```text
+Template/Form                         Incoming Request
+    |                                       |
+    |                                       |
 
     ▼                                     ▼
 csrf_field() → CsrfTokenManager     CsrfMiddleware

@@ -8,6 +8,8 @@ use YasserElgammal\Green\Http\Request;
 use YasserElgammal\Green\Http\Response;
 use YasserElgammal\Green\Routing\Router;
 use YasserElgammal\Green\Exceptions\ExceptionHandler;
+use YasserElgammal\Green\Signal\LifecycleSignals;
+use YasserElgammal\Green\Signal\SignalDispatcher;
 use YasserElgammal\Green\Support\ServiceProvider;
 
 class Application extends Container
@@ -106,11 +108,20 @@ class Application extends Container
 
     public function handle(Request $request): Response
     {
+        $this->instance(Request::class, $request);
+        $signals = $this->make(SignalDispatcher::class);
+
         try {
-            return $this->router->dispatch($request);
+            $signals->emit(LifecycleSignals::REQUEST_RECEIVED, ['request' => $request]);
+            $response = $this->router->dispatch($request);
         } catch (\Throwable $e) {
+            $this->emitLifecycleSignalSafely($signals, LifecycleSignals::EXCEPTION_OCCURRED, [
+                'request' => $request,
+                'exception' => $e,
+            ]);
+
             try {
-                return $this->make(ExceptionHandler::class)->handle($e, $request);
+                $response = $this->make(ExceptionHandler::class)->handle($e, $request);
             } catch (\Throwable $handlerError) {
                 // Error rendering depends on infrastructure too (container, logger,
                 // templates), so it needs an independent last-resort response.
@@ -120,12 +131,31 @@ class Application extends Container
                     $e->getMessage(),
                 ));
 
-                return new Response(
+                $response = new Response(
                     'Internal Server Error',
                     500,
                     ['Content-Type' => 'text/plain; charset=UTF-8'],
                 );
             }
+        }
+
+        $this->emitLifecycleSignalSafely($signals, LifecycleSignals::REQUEST_HANDLED, [
+            'request' => $request,
+            'response' => $response,
+        ]);
+
+        return $response;
+    }
+
+    private function emitLifecycleSignalSafely(
+        SignalDispatcher $signals,
+        string $signal,
+        array $payload,
+    ): void {
+        try {
+            $signals->emit($signal, $payload);
+        } catch (\Throwable $e) {
+            error_log(sprintf('[Green] Signal [%s] listener failed: %s', $signal, $e->getMessage()));
         }
     }
 
