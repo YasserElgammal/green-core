@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.1] - 2026-09-09
+
+### Added
+- Added the `view:clear` console command to remove compiled Twig templates while preserving the configured cache directory.
+- Added `VIEW_CACHE` and `VIEW_CACHE_PATH` environment mappings for configuring Twig template caching.
+- Added regression coverage for view-cache clearing, unsafe cache paths, and boolean environment-value conversion.
+
 ## [2.5.0] - 2026-09-02
 
 ### Added
