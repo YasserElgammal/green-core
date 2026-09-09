@@ -36,6 +36,8 @@ final class InfrastructureConfigDefinition implements ConfigDefinitionInterface
             'translation.fallback_locale' => ['env' => 'APP_FALLBACK_LOCALE'],
             'translation.lang_path' => ['env' => 'APP_LANG_PATH'],
             'translation.cache_path' => ['env' => 'APP_TRANSLATION_CACHE_PATH'],
+            'view.cache' => ['env' => 'VIEW_CACHE', 'type' => 'bool'],
+            'view.cache_path' => ['env' => 'VIEW_CACHE_PATH'],
         ];
     }
 

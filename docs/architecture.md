@@ -47,15 +47,15 @@ Green was built with a distinct identity and philosophy, reacting against the tr
 
 ### Architectural Approach
 
-The framework employs a minimalist, explicit architecture. Unlike heavy frameworks that rely on complex DI containers and pervasive Service Locators, Green opts for:
+The framework employs a minimalist, explicit architecture. Unlike heavy frameworks that rely on pervasive service location and implicit discovery, Green opts for:
 
 - **Direct instantiation** and explicit dependencies
 - **Container-owned singletons** exposed through thin helper functions
-- **Domain-specific managers** (`LogManager`, `DriveManager`, `ConnectManager`, `TranslatorManager`) instead of a monolithic container
+- **Domain-specific managers** (`LogManager`, `DriveManager`, `ConnectManager`, `TranslatorManager`) that own driver selection while the application container owns their lifecycle
 
 **Key Architectural Principles:**
 
-- **Decentralized Service Management** — No monolithic DI container. Each subsystem manages its own drivers and instances.
+- **Explicit Container Ownership** — `Application` extends the lightweight `Container` and is the single source of truth for framework service instances. Subsystem managers remain responsible for their own drivers and focused runtime behavior.
 - **Data Mapper & Table Gateway ORM** — Strict separation between data container (`Model`) and database operations (`Table`).
 - **Onion Middleware Pipeline** — HTTP requests flow through a functional pipeline of closures.
 - **Reflection-Based Dispatch** — PHP's Reflection API injects dependencies and route parameters into controller methods.
@@ -470,7 +470,7 @@ Controller type-hints Payload subclass
 2. **`prepareForValidation()`** — Hook for pre-processing (e.g., trimming, normalizing file uploads).
 3. **`authorize()`** — Returns `bool`. If `false`, throws a `403 Forbidden`.
 4. **`validate()`** — Executes `Respect\Validation` rules defined in the `rules()` method.
-5. **Exception** — On failure, throws [`ValidationException`](../src/Exceptions/ValidationException.php) with structured errors. The global [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) renders a `422 Unprocessable Entity` response (JSON or HTML).
+5. **Exception** — On failure, throws [`ValidationException`](../src/Http/ValidationException.php) with structured errors. The global [`ExceptionHandler`](../src/Exceptions/ExceptionHandler.php) renders a `422 Unprocessable Entity` response (JSON or HTML).
 
 ---
 
@@ -623,7 +623,7 @@ Column identifiers are validated before being interpolated into SQL, while value
 
 `GreenQuery::paginate($perPage, $page, $withCount)` paginates the filtered query itself, preserving `where` conditions and ordering. When `$withCount` is `false`, [`Paginator`](../src/Pagination/Paginator.php) skips the `COUNT(*)` query and fetches one extra row internally to determine `has_next`.
 
-See [Database Querying](database-querying.md) for the user-facing API reference.
+See [Database and IQL](database-iql.html) for the user-facing API reference.
 
 ### Schema Grammars
 
@@ -702,12 +702,14 @@ Green implements a highly decoupled Event Dispatcher known as **Signals**.
 graph LR
     D[SignalDispatcher] --> L1[Sync Listener]
     D --> L2[Sync Listener]
-    D --> Q[Async Listener Queue]
 ```
 
-- **Attribute-Based Discovery**: Listeners declare their subscriptions natively using `#[Signal('event.name')]`.
-- **Global Helper**: Firing an event is as simple as `dispatch('user.registered', $user)`.
-- **SignalAware**: Classes can implement `SignalAware` to easily emit domain events directly from their core logic.
+- **Explicit registration**: Register synchronous listeners with `signal()->listen('event.name', $listener, $priority)`. Lower priority numbers execute first.
+- **Global helper**: Emit a signal with `signal()->emit('user.registered', ['user' => $user])` and collect listener return values.
+- **Propagation control**: Returning `false` from a listener stops dispatch to the remaining listeners.
+- **SignalAware**: Classes can use the `SignalAware` trait to emit class-prefixed domain signals.
+
+Signal dispatch is synchronous. The current implementation does not provide attribute-based listener discovery or an asynchronous queue.
 
 ---
 
