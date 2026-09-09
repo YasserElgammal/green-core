@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.6.0] - 2026-09-10
+
+### Added
+- Added named-route URL generation through the `route()` function in Twig templates.
+- Added container-resolved invokable signal listeners.
+- Added HTTP lifecycle signals for received requests, handled responses, and occurred exceptions.
+- Added console lifecycle signals with command names, exit codes, execution durations, and thrown exceptions.
+- Added lifecycle signal constants and focused HTTP, console, and container-resolution regression tests.
+
 ## [2.5.1] - 2026-09-09
 
 ### Added

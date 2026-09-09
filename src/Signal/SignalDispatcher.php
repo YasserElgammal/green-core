@@ -2,24 +2,34 @@
 
 namespace YasserElgammal\Green\Signal;
 
+use Closure;
+use RuntimeException;
 use SplPriorityQueue;
 
 class SignalDispatcher
 {
     /**
-     * @var array<string, SplPriorityQueue<int, callable>>
+     * @var array<string, SplPriorityQueue<int, callable|string>>
      */
     private array $listeners = [];
+
+    private readonly ?Closure $resolver;
+
+    /** @param callable(string): mixed|null $resolver */
+    public function __construct(?callable $resolver = null)
+    {
+        $this->resolver = $resolver === null ? null : Closure::fromCallable($resolver);
+    }
 
     /**
      * Register a listener for a given signal.
      * Lower priority numbers execute earlier.
      *
      * @param string $signal The name of the signal
-     * @param callable $listener The callback to execute
+     * @param callable|string $listener Callback or invokable class to execute
      * @param int $priority Priority for execution order (default: 0)
      */
-    public function listen(string $signal, callable $listener, int $priority = 0): void
+    public function listen(string $signal, callable|string $listener, int $priority = 0): void
     {
         if (!isset($this->listeners[$signal])) {
             // SplPriorityQueue is max-heap, so higher values are extracted first.
@@ -54,6 +64,7 @@ class SignalDispatcher
         $queue = clone $this->listeners[$signal];
 
         foreach ($queue as $listener) {
+            $listener = $this->resolveListener($listener);
             $result = $listener($payload);
             $results[] = $result;
 
@@ -63,6 +74,24 @@ class SignalDispatcher
         }
 
         return $results;
+    }
+
+    private function resolveListener(callable|string $listener): callable
+    {
+        if (!is_string($listener) || is_callable($listener)) {
+            return $listener;
+        }
+
+        if ($this->resolver === null) {
+            throw new RuntimeException("Cannot resolve signal listener [{$listener}] without a resolver.");
+        }
+
+        $resolved = ($this->resolver)($listener);
+        if (!is_callable($resolved)) {
+            throw new RuntimeException("Signal listener [{$listener}] must be callable.");
+        }
+
+        return $resolved;
     }
 
     /**

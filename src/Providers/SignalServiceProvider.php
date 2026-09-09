@@ -9,9 +9,10 @@ class SignalServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(SignalDispatcher::class, function ($app) {
-            return new SignalDispatcher();
-        });
+        $this->app->singleton(
+            SignalDispatcher::class,
+            fn () => new SignalDispatcher(fn (string $listener) => $this->app->make($listener)),
+        );
     }
 
 }
