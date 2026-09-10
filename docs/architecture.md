@@ -23,7 +23,7 @@
 13. [ORM Architecture (Table Gateway & Data Mapper)](#13-orm-architecture-table-gateway--data-mapper)
 14. [Session Management](#14-session-management)
 15. [Cache System Architecture](#15-cache-system-architecture)
-16. [Signal Dispatcher (Events)](#16-signal-dispatcher-events)
+16. [Signal Dispatcher](#16-signal-dispatcher)
 17. [Authorization Architecture](#17-authorization-architecture)
 18. [Extensibility & Service Providers](#18-extensibility--service-providers)
 19. [Performance Optimizations](#19-performance-optimizations)
@@ -698,9 +698,9 @@ The manager also provides a powerful `remember()` method that retrieves an item 
 
 ---
 
-## 16. Signal Dispatcher (Events)
+## 16. Signal Dispatcher
 
-Green implements a highly decoupled Event Dispatcher known as **Signals**.
+Green implements a highly decoupled Signal Dispatcher.
 
 ### Architecture
 
