@@ -5,7 +5,6 @@ namespace YasserElgammal\Green\Tests\Console;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use YasserElgammal\Green\Console\Commands\CreateAuthorizerCommand;
-use YasserElgammal\Green\Console\Commands\CreateEventCommand;
 use YasserElgammal\Green\Console\Commands\CreateListenerCommand;
 use YasserElgammal\Green\Console\Commands\CreatePolicyCommand;
 
@@ -50,18 +49,6 @@ class CreateAuthAndSignalCommandsTest extends TestCase
         $this->assertSame(0, $exitCode);
         $this->assertFileExists($path);
         $this->assertStringContainsString('class PostAuthorizer extends BaseAuthorizer', file_get_contents($path));
-    }
-
-    public function test_it_creates_event(): void
-    {
-        $tester = new CommandTester(new CreateEventCommand());
-
-        $exitCode = $tester->execute(['name' => 'UserCreated']);
-        $path = $this->projectRoot . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Events' . DIRECTORY_SEPARATOR . 'UserCreated.php';
-
-        $this->assertSame(0, $exitCode);
-        $this->assertFileExists($path);
-        $this->assertStringContainsString('class UserCreated', file_get_contents($path));
     }
 
     public function test_it_creates_listener(): void

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.0] - 2026-09-10
+
+### Removed
+- Removed the unused `create:event` generator. Signals are string names with array payloads; executable listener classes continue to be generated with `create:listener`.
+
 ## [2.6.0] - 2026-09-10
 
 ### Added
