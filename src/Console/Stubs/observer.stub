@@ -1,0 +1,38 @@
+<?php
+
+namespace {{ namespace }};
+
+use YasserElgammal\Green\Database\Attributes\ObservesModel;
+use YasserElgammal\Green\Database\Model;
+use YasserElgammal\Green\Database\Observer;
+
+#[ObservesModel({{ model }}::class)]
+class {{ class }} extends Observer
+{
+    public function creating(Model $model): bool
+    {
+        return true;
+    }
+
+    public function created(Model $model): void
+    {
+    }
+
+    public function updating(Model $model): bool
+    {
+        return true;
+    }
+
+    public function updated(Model $model): void
+    {
+    }
+
+    public function deleting(Model $model): bool
+    {
+        return true;
+    }
+
+    public function deleted(Model $model): void
+    {
+    }
+}

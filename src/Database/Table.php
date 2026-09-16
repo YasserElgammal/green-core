@@ -95,6 +95,29 @@ class Table
     protected array $relations = [];
 
     /**
+     * Observer classes to register for this Table's model.
+     *
+     * Each entry should be a fully qualified Observer class name.
+     * Observers may also be registered via #[ObservesModel] attributes
+     * on the Observer class, or programmatically via observe().
+     *
+     * @var array<int, class-string<Observer>>
+     */
+    protected array $observers = [];
+
+    /**
+     * Resolved Observer instances for this Table, populated during boot.
+     *
+     * @var Observer[]
+     */
+    private array $resolvedObservers = [];
+
+    /**
+     * Whether observers have been booted for this Table instance.
+     */
+    private bool $observersBooted = false;
+
+    /**
      * The named database connection to use.
      * Null means the default connection from the ConnectionPool.
      */
@@ -119,6 +142,7 @@ class Table
         }
 
         $this->resolveRelationDefaults();
+        $this->bootObservers();
     }
 
     /**
@@ -925,6 +949,10 @@ class Table
 
     /**
      * Insert a plain array and return the hydrated model.
+     *
+     * Observer hooks: saving → creating → INSERT → created → saved.
+     * If any before-hook returns false, the insert is skipped and a
+     * model hydrated from the original data (without PK) is returned.
      */
     public function insert(array $data): Model
     {
@@ -933,13 +961,37 @@ class Table
             $data['created_at'] ??= $now;
         }
 
-        $this->connection->insert($this->table, $data);
-        $data[$this->primaryKey] = (int) $this->connection->lastInsertId();
-        return (clone $this->blueprint)->fill($data)->syncOriginal();
+        // Build a temporary model for observer hooks
+        $model = (clone $this->blueprint)->fill($data);
+
+        // ── Before hooks ─────────────────────────────────────────────────
+        if (!$this->fireObserverEvent('saving', $model)) {
+            return $model;
+        }
+        if (!$this->fireObserverEvent('creating', $model)) {
+            return $model;
+        }
+
+        $this->connection->insert($this->table, $model->toArray());
+        $model->set($this->primaryKey, (int) $this->connection->lastInsertId());
+        $model->syncOriginal();
+
+        // ── After hooks ──────────────────────────────────────────────────
+        $this->fireObserverEvent('created', $model);
+        $this->fireObserverEvent('saved', $model);
+
+        return $model;
     }
 
     /**
      * Persist a Model instance (INSERT or UPDATE based on PK presence).
+     *
+     * Observer hooks:
+     *   INSERT: saving → creating → INSERT → created → saved
+     *   UPDATE: saving → updating → UPDATE → updated → saved
+     *
+     * If any before-hook returns false, the operation is skipped
+     * and the unmodified model is returned.
      */
     public function save(Model $model): Model
     {
@@ -948,6 +1000,14 @@ class Table
         if ($model->hasPrimaryKey()) {
             if ($model->isClean()) {
                 return $model; // Nothing to update
+            }
+
+            // ── Before hooks (update path) ───────────────────────────────
+            if (!$this->fireObserverEvent('saving', $model)) {
+                return $model;
+            }
+            if (!$this->fireObserverEvent('updating', $model)) {
+                return $model;
             }
 
             $id   = $model->getPrimaryKeyValue();
@@ -963,7 +1023,21 @@ class Table
             if (!empty($data)) {
                 $this->connection->update($this->table, $data, [$pk => $id]);
             }
+
+            $model->syncOriginal();
+
+            // ── After hooks (update path) ────────────────────────────────
+            $this->fireObserverEvent('updated', $model);
+            $this->fireObserverEvent('saved', $model);
         } else {
+            // ── Before hooks (insert path) ───────────────────────────────
+            if (!$this->fireObserverEvent('saving', $model)) {
+                return $model;
+            }
+            if (!$this->fireObserverEvent('creating', $model)) {
+                return $model;
+            }
+
             $data = $model->toArray();
 
             if ($this->timestamps) {
@@ -974,9 +1048,14 @@ class Table
 
             $this->connection->insert($this->table, $data);
             $model->set($pk, (int) $this->connection->lastInsertId());
+            $model->syncOriginal();
+
+            // ── After hooks (insert path) ────────────────────────────────
+            $this->fireObserverEvent('created', $model);
+            $this->fireObserverEvent('saved', $model);
         }
 
-        return $model->syncOriginal();
+        return $model;
     }
 
     /**
@@ -997,22 +1076,133 @@ class Table
 
     /**
      * Delete a model instance from the database.
+     *
+     * Observer hooks: deleting → DELETE → deleted.
+     * If the deleting hook returns false, the deletion is skipped.
      */
     public function delete(Model $model): bool
     {
         if (!$model->hasPrimaryKey()) {
             return false;
         }
+
+        if (!$this->fireObserverEvent('deleting', $model)) {
+            return false;
+        }
+
         $this->connection->delete($this->table, [$this->primaryKey => $model->getPrimaryKeyValue()]);
+
+        $this->fireObserverEvent('deleted', $model);
+
         return true;
     }
 
     /**
      * Delete a row by primary key directly.
+     *
+     * Note: this method bypasses Observer hooks intentionally.
+     * Use delete(Model) for observer-aware deletion.
      */
     public function deleteById(int|string $id): int
     {
         return $this->connection->delete($this->table, [$this->primaryKey => $id]);
+    }
+
+    // ─── Observers ───────────────────────────────────────────────────────────
+
+    /**
+     * Register an observer for this Table's model at runtime.
+     *
+     * @param class-string<Observer>|Observer $observer
+     */
+    public function observe(string|Observer $observer): void
+    {
+        $instance = $observer instanceof Observer
+            ? $observer
+            : $this->resolveObserverInstance($observer);
+
+        $this->resolvedObservers[] = $instance;
+    }
+
+    /**
+     * Boot observers from the $observers property and the global ObserverRegistry.
+     */
+    private function bootObservers(): void
+    {
+        if ($this->observersBooted) {
+            return;
+        }
+
+        $this->observersBooted = true;
+
+        // ── From the declarative $observers property ─────────────────────
+        foreach ($this->observers as $observerClass) {
+            $this->resolvedObservers[] = $this->resolveObserverInstance($observerClass);
+        }
+
+        // ── From the global ObserverRegistry (attribute-based) ───────────
+        try {
+            $registry = app(ObserverRegistry::class);
+            $modelClass = get_class($this->blueprint);
+
+            foreach ($registry->getObservers($modelClass) as $observer) {
+                $this->resolvedObservers[] = $observer;
+            }
+        } catch (\Throwable) {
+            // Registry unavailable (e.g., testing without full app bootstrap)
+        }
+    }
+
+    /**
+     * Fire an observer event on all registered observers.
+     *
+     * For before-hooks (creating, updating, deleting, saving): if any
+     * observer returns false, propagation halts and this method returns false.
+     *
+     * For after-hooks (created, updated, deleted, saved): all observers
+     * run and the return value is always true.
+     *
+     * @return bool false if a before-hook halted the operation
+     */
+    private function fireObserverEvent(string $event, Model $model): bool
+    {
+        $isBeforeHook = in_array($event, ['creating', 'updating', 'deleting', 'saving'], true);
+
+        foreach ($this->resolvedObservers as $observer) {
+            if (!method_exists($observer, $event)) {
+                continue;
+            }
+
+            $result = $observer->$event($model);
+
+            if ($isBeforeHook && $result === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Resolve an observer class string into an instance.
+     */
+    private function resolveObserverInstance(string $observerClass): Observer
+    {
+        try {
+            $instance = app($observerClass);
+        } catch (\Throwable) {
+            $instance = new $observerClass();
+        }
+
+        if (!$instance instanceof Observer) {
+            throw new \RuntimeException(sprintf(
+                'Observer [%s] must extend [%s].',
+                $observerClass,
+                Observer::class,
+            ));
+        }
+
+        return $instance;
     }
 
     // ─── Pagination ───────────────────────────────────────────────────────────
