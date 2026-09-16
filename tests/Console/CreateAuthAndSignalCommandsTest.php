@@ -63,6 +63,34 @@ class CreateAuthAndSignalCommandsTest extends TestCase
         $this->assertStringContainsString('public function __invoke(array $payload): mixed', file_get_contents($path));
     }
 
+    public function test_it_creates_observer(): void
+    {
+        $tester = new CommandTester(new \YasserElgammal\Green\Console\Commands\CreateObserverCommand());
+
+        $exitCode = $tester->execute(['name' => 'UserObserver']);
+        $path = $this->projectRoot . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Observers' . DIRECTORY_SEPARATOR . 'UserObserver.php';
+
+        $this->assertSame(0, $exitCode);
+        $this->assertFileExists($path);
+        $contents = file_get_contents($path);
+        $this->assertStringContainsString('class UserObserver extends Observer', $contents);
+        $this->assertStringContainsString('#[ObservesModel(User::class)]', $contents);
+    }
+
+    public function test_it_creates_observer_with_model_option(): void
+    {
+        $tester = new CommandTester(new \YasserElgammal\Green\Console\Commands\CreateObserverCommand());
+
+        $exitCode = $tester->execute(['name' => 'AuditObserver', '--model' => 'Post']);
+        $path = $this->projectRoot . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Observers' . DIRECTORY_SEPARATOR . 'AuditObserver.php';
+
+        $this->assertSame(0, $exitCode);
+        $this->assertFileExists($path);
+        $contents = file_get_contents($path);
+        $this->assertStringContainsString('class AuditObserver extends Observer', $contents);
+        $this->assertStringContainsString('#[ObservesModel(Post::class)]', $contents);
+    }
+
     public function test_it_does_not_overwrite_existing_files(): void
     {
         $path = $this->projectRoot . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Policies' . DIRECTORY_SEPARATOR . 'PostPolicy.php';

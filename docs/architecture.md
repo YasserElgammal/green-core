@@ -635,6 +635,15 @@ See [Database and IQL](database-iql.html) for the user-facing API reference.
 
 To support multiple database systems, Schema compilation is abstracted behind the [`GrammarFactory`](../src/Database/Schema/GrammarFactory.php). Operations like `createTable`, `addColumn`, and `dropTable` are dispatched to a specific Grammar (e.g., `MySqlGrammar`), ensuring SQL compatibility across dialects without bloating the Table layer.
 
+### Database Observers
+
+The ORM supports lifecycle event hooks via the `Observer` pattern. This allows you to decouple side-effects (like logging, validation, or cascading updates) from your controller or business logic.
+
+- **Explicit Registration:** Observers are explicitly bound to a Model using the `#[ObservesModel(Model::class)]` attribute on the Observer class.
+- **Hooks:** Available hooks include `creating`, `created`, `updating`, `updated`, `deleting`, `deleted`, `saving`, and `saved`.
+- **Registry & Container:** `ObserverRegistry` resolves registered observers via the application container, allowing dependency injection in observer constructors.
+- **Halt Execution:** Returning `false` from a `creating`, `updating`, `deleting`, or `saving` hook stops the persistence operation and returns `false` to the caller.
+
 ### Relation Engine & Eager Loading
 
 The ORM solves the N+1 query problem through a **Strategy-based** relation engine.

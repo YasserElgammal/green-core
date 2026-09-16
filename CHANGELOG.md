@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.0] - 2026-09-16
+
+### Added
+- Database Observer system for hooking into model lifecycles (creating, created, updating, updated, deleting, deleted, saving, saved).
+- `Observer` abstract base class and `ObserverRegistry` for managing observer bindings.
+- `#[ObservesModel]` PHP attribute for explicit, auto-discovered observer registration.
+- `create:observer` console command to generate observer classes.
+
 ## [2.7.0] - 2026-09-10
 
 ### Removed
