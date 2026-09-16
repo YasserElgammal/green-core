@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.1] - 2026-09-17
+
+### Fixed
+- Registered `ObserverRegistry` as an application-owned singleton and enabled container-based dependency resolution for observer classes.
+
 ## [2.8.0] - 2026-09-16
 
 ### Added
