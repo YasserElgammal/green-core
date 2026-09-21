@@ -660,6 +660,16 @@ graph LR
 - [`RelationRegistry`](../src/Database/Relations/RelationRegistry.php) — Maps relation types (`hasOne`, `hasMany`, `belongsTo`, `manyToMany`) to concrete `RelationLoader` implementations.
 - **Single Query Eager Loading** — When `->include('posts.comments')` is called, the `Table` gathers all foreign keys and delegates to the appropriate `RelationLoader`. The loader executes exactly **one** `WHERE IN (...)` query and stitches the results back in memory.
 
+### Defining Relations
+
+Relations are defined on the Table class, keeping Models as pure DTOs. When the same relation name is declared in more than one format, the priority from highest to lowest is:
+
+1. **`#[RelatesTo]` attribute — highest priority.** If an attribute defines the relation, it overrides definitions with the same name in both the `relations()` method and the `$relations` property. This is the recommended, type-safe format.
+2. **`relations()` method — second priority.** If no attribute defines the relation, the value returned by this method overrides a definition with the same name in the `$relations` property. Use it for programmatic relation definitions.
+3. **`$relations` property — lowest priority.** This legacy format supplies the baseline definition and is used only when neither an attribute nor the `relations()` method overrides that relation name.
+
+After applying this precedence, `Table::resolveRelationDefaults()` fills any inferred keys and normalizes Relation DTOs into configuration arrays, ensuring the relation loader strategies and the IQL parser continue to operate on predictable data structures.
+
 ### Include Query Language (IQL)
 
 The framework features a custom parser ([`IncludeQueryEngine`](../src/Database/IncludeQuery/IncludeQueryEngine.php)) for advanced API-driven eager loading:
@@ -672,7 +682,7 @@ Pipeline: **Raw String → Parse (AST) → Validate → Resolve (Closure constra
 
 The resolved closures modify the underlying `QueryBuilder` before the relation is fetched.
 
-Nested validation supports both legacy relation arrays and modern relation DTOs returned by a protected `relations()` method. The validator resolves the related model's conventional Table class (for example, `App\Models\Comment` to `App\Tables\CommentTable`), reads its relation definitions without invoking the database-dependent Table constructor, converts `Relation` DTOs to configuration arrays, and validates the child node recursively.
+Nested validation resolves the related model's conventional Table class, reads its relation definitions without invoking the database-dependent Table constructor, converts any Relation DTOs or attributes to configuration arrays, and validates the child node recursively.
 
 ---
 

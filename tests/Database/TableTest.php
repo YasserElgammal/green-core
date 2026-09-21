@@ -15,6 +15,7 @@ class TestUser extends Model
 }
 
 use YasserElgammal\Green\Database\Relations\HasMany;
+use YasserElgammal\Green\Database\Relations\RelatesTo;
 
 class TestUserTable extends Table
 {
@@ -23,6 +24,17 @@ class TestUserTable extends Table
         return [
             'posts' => new HasMany(TestPost::class, localKey: 'id')
         ];
+    }
+}
+
+#[RelatesTo('posts', new HasMany(TestPost::class, localKey: 'id'))]
+class TestAttributeTable extends Table
+{
+    protected string $table = 'users';
+
+    public function __construct()
+    {
+        parent::__construct(new TestUser());
     }
 }
 
@@ -365,5 +377,23 @@ class TableTest extends TestCase
         $this->assertSame(1, $users[0]->id);
         $this->assertSame('Alice', $users[0]->name);
         $this->assertSame('2024-01-01 00:00:00', $users[0]->created_at);
+    }
+
+    public function test_it_registers_relations_via_attributes(): void
+    {
+        $table = new TestAttributeTable();
+        
+        $reflection = new \ReflectionClass($table);
+        $property = $reflection->getProperty('relations');
+        $property->setAccessible(true);
+        $relations = $property->getValue($table);
+
+        $this->assertArrayHasKey('posts', $relations);
+        
+        $relation = $relations['posts'];
+        $this->assertEquals('hasMany', $relation['type']);
+        $this->assertEquals(TestPost::class, $relation['model']);
+        $this->assertEquals('test_user_id', $relation['foreign_key']);
+        $this->assertEquals('id', $relation['local_key']);
     }
 }
