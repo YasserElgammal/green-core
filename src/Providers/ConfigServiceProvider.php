@@ -36,7 +36,6 @@ final class ConfigServiceProvider extends ServiceProvider
             $cache,
         );
         $config = $manager->load($overrides);
-        $manager->lock();
 
         $this->app->instance(ConfigReaderInterface::class, $config);
         $this->app->instance(ConfigCache::class, $cache);

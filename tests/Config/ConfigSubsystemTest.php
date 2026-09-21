@@ -50,6 +50,24 @@ final class ConfigSubsystemTest extends TestCase
         self::assertSame(['timeout' => 5, 'ssl' => true], $items['database']['options']);
     }
 
+    public function test_loader_recursively_merges_maps_and_replaces_lists_and_scalars(): void
+    {
+        $items = (new Loader())
+            ->addSource(new ArraySource([
+                'app' => ['name' => 'Green', 'providers' => ['A', 'B']],
+                'cache' => ['enabled' => false],
+            ]))
+            ->addSource(new ArraySource([
+                'app' => ['providers' => ['C']],
+                'cache' => ['enabled' => true],
+            ]))
+            ->load();
+
+        self::assertSame('Green', $items['app']['name']);
+        self::assertSame(['C'], $items['app']['providers']);
+        self::assertTrue($items['cache']['enabled']);
+    }
+
     public function test_cached_snapshot_round_trips_exactly(): void
     {
         $path = $this->directory . '/config.php';

@@ -28,4 +28,32 @@ final class ApplicationBasePathTest extends TestCase
             $app->make(ConfigCache::class)->path(),
         );
     }
+
+    public function testConfigHelperExposesOnlyReadOperations(): void
+    {
+        $reflection = new ReflectionClass(Application::class);
+        $app = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('basePath')->setValue($app, dirname(__DIR__, 2));
+        $reflection->getMethod('loadConfiguration')->invoke($app, []);
+
+        $hadApplication = array_key_exists('__green_app', $GLOBALS);
+        $previousApplication = $GLOBALS['__green_app'] ?? null;
+        $GLOBALS['__green_app'] = $app;
+
+        try {
+            $config = config();
+
+            self::assertInstanceOf(ConfigReaderInterface::class, $config);
+            self::assertFalse(method_exists($config, 'set'));
+            self::assertFalse(method_exists($config, 'merge'));
+            self::assertFalse(method_exists($config, 'lock'));
+            self::assertFalse(method_exists($config, 'isLocked'));
+        } finally {
+            if ($hadApplication) {
+                $GLOBALS['__green_app'] = $previousApplication;
+            } else {
+                unset($GLOBALS['__green_app']);
+            }
+        }
+    }
 }

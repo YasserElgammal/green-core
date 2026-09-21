@@ -2,24 +2,12 @@
 
 namespace YasserElgammal\Green\Config;
 
-use YasserElgammal\Green\Config\Contracts\MutableConfigInterface;
-use YasserElgammal\Green\Config\Contracts\LockableConfigInterface;
-use YasserElgammal\Green\Config\Exceptions\ConfigurationException;
+use YasserElgammal\Green\Config\Contracts\ConfigReaderInterface;
 
-class Repository implements MutableConfigInterface, LockableConfigInterface
+class Repository implements ConfigReaderInterface
 {
-    protected array $items = [];
-    private bool $locked = false;
-
-    public function __construct(array $items = [])
+    public function __construct(private readonly array $items = [])
     {
-        $this->items = $items;
-    }
-
-    public function merge(array $items): void
-    {
-        $this->assertMutable();
-        $this->items = Merger::merge($this->items, $items);
     }
 
     public function get(string $key, mixed $default = null): mixed
@@ -45,30 +33,6 @@ class Repository implements MutableConfigInterface, LockableConfigInterface
         return $array;
     }
 
-    public function set(string $key, mixed $value): void
-    {
-        $this->assertMutable();
-        $this->assertValidKey($key);
-        $keys = explode('.', $key);
-        $array = &$this->items;
-
-        foreach ($keys as $i => $segment) {
-            if (count($keys) === 1) {
-                break;
-            }
-
-            unset($keys[$i]);
-
-            if (!isset($array[$segment]) || !is_array($array[$segment])) {
-                $array[$segment] = [];
-            }
-
-            $array = &$array[$segment];
-        }
-
-        $array[array_shift($keys)] = $value;
-    }
-
     public function has(string $key): bool
     {
         $sentinel = new \stdClass();
@@ -78,29 +42,5 @@ class Repository implements MutableConfigInterface, LockableConfigInterface
     public function all(): array
     {
         return $this->items;
-    }
-
-    public function lock(): void
-    {
-        $this->locked = true;
-    }
-
-    public function isLocked(): bool
-    {
-        return $this->locked;
-    }
-
-    private function assertMutable(): void
-    {
-        if ($this->locked) {
-            throw new ConfigurationException('Configuration is locked after application boot.');
-        }
-    }
-
-    private function assertValidKey(string $key): void
-    {
-        if ($key === '' || str_starts_with($key, '.') || str_ends_with($key, '.') || str_contains($key, '..')) {
-            throw new ConfigurationException("Invalid configuration key [{$key}].");
-        }
     }
 }

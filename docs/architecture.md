@@ -71,7 +71,6 @@ new Application(overrides, basePath, configDefinitions)
   ├── ConfigServiceProvider::bootstrap()
   │   ├── Build DefinitionRegistry
   │   ├── ConfigManager::load()
-  │   ├── ConfigManager::lock()
   │   ├── Bind narrow config contracts
   │   └── Bind immutable typed configuration objects
   ├── registerCoreProviders()
@@ -80,7 +79,7 @@ new Application(overrides, basePath, configDefinitions)
   └── Resolve Router
 ```
 
-1. **Configuration bootstrap** — [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) assembles definitions and sources, loads and locks the resulting snapshot, then binds its read contract and typed settings before any runtime provider is registered.
+1. **Configuration bootstrap** — [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) assembles definitions and sources into a final read-only repository, then binds its read contract and typed settings before any runtime provider is registered.
 2. **Core provider registration** — Fundamental services are bound without reading `$_ENV`, PHP config files, or global state directly.
 3. **Configured provider registration** — Additional providers are read from the immutable [`ApplicationConfig`](../src/Config/Typed/ApplicationConfig.php).
 4. **Provider boot** — Post-registration work runs after every binding exists. Examples include initializing Twig, installing error handlers, and publishing the configured `Translator`.
@@ -97,7 +96,7 @@ individual PHP files.
 - **One effective configuration snapshot** for the entire application.
 - **Deterministic precedence** between configuration sources.
 - **No configuration drift** between the repository and resolved singletons.
-- **Narrow dependencies** through read, mutation, and lifecycle contracts.
+- **Narrow dependencies** through a read-only runtime contract.
 - **Module extensibility** without editing `Application`.
 - **Safe diagnostics** that redact credentials and tokens.
 - **Production caching** with compatibility fingerprints.
@@ -112,8 +111,8 @@ is preserved in the [future configuration validation plan](plans/config-validati
 
 | Component | Responsibility |
 |---|---|
-| [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) | Composition root for the configuration subsystem. Creates and locks the snapshot, then binds the read contract, manager, registry, redactor, cache, and typed configuration objects. |
-| [`ConfigManager`](../src/Config/ConfigManager.php) | Enforces loading and locking in the correct order. |
+| [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) | Composition root for the configuration subsystem. Creates the final read-only snapshot, then binds the read contract, manager, registry, redactor, cache, and typed configuration objects. |
+| [`ConfigManager`](../src/Config/ConfigManager.php) | Loads the effective configuration once and exposes it after it is ready. |
 | [`DefinitionRegistry`](../src/Config/DefinitionRegistry.php) | Aggregates defaults and environment mappings from registered modules. |
 | [`ConfigDefinitionInterface`](../src/Config/Contracts/ConfigDefinitionInterface.php) | Contract implemented by every configuration module. |
 | [`Loader`](../src/Config/Loader.php) | Executes configuration sources in precedence order and merges their results. |
@@ -216,19 +215,18 @@ definition does not require editing `Application`, `ConfigManager`, or `Loader`.
 
 #### Lifecycle and immutability
 
-The manager enforces a strict state machine:
+The manager enforces a small load-once lifecycle:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Collecting
-    Collecting --> Loaded: load()
-    Loaded --> Locked: lock()
-    Locked --> [*]
+    [*] --> Unloaded
+    Unloaded --> Ready: load()
+    Ready --> [*]
 ```
 
-Invalid transitions throw `ConfigurationException`. Once locked, `set()` and
-`merge()` also throw. Overrides must therefore be supplied before provider
-registration:
+Calling `load()` more than once or requesting the repository before it is ready
+throws `ConfigurationException`. The repository has no mutation API; overrides
+must therefore be supplied at the composition boundary:
 
 ```php
 $app = new Application(
@@ -237,8 +235,9 @@ $app = new Application(
 );
 ```
 
-This rule guarantees that a resolved `ConnectionPool`, mail transport, logger, or
-cache manager cannot retain settings different from the repository snapshot.
+This construction model guarantees that a resolved `ConnectionPool`, mail
+transport, logger, or cache manager cannot retain settings different from a
+later-mutated repository snapshot.
 
 #### Contracts and dependency direction
 
@@ -247,8 +246,6 @@ The subsystem follows Interface Segregation:
 | Contract | Capability | Intended consumer |
 |---|---|---|
 | [`ConfigReaderInterface`](../src/Config/Contracts/ConfigReaderInterface.php) | `get`, `has`, `all` | Read-only consumers and diagnostic commands. |
-| [`MutableConfigInterface`](../src/Config/Contracts/MutableConfigInterface.php) | Read plus `set`, `merge` | Internal repository/manager composition only; it is not bound for runtime services. |
-| [`LockableConfigInterface`](../src/Config/Contracts/LockableConfigInterface.php) | `lock`, `isLocked` | Internal lifecycle management only; it is not bound for runtime services. |
 | [`ConfigRedactorInterface`](../src/Config/Contracts/ConfigRedactorInterface.php) | Safe diagnostic transformation | `config:show` and observability tools. |
 
 Infrastructure services normally receive immutable typed objects instead of the
@@ -278,7 +275,7 @@ the composition boundary and gives runtime services type-safe values.
         'fingerprint' => '...',
     ],
     'config' => [
-        // merged and locked snapshot
+        // final read-only snapshot
     ],
 ]
 ```
