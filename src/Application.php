@@ -75,6 +75,7 @@ class Application extends Container
             \YasserElgammal\Green\Providers\SessionServiceProvider::class,
             \YasserElgammal\Green\Providers\DatabaseServiceProvider::class,
             \YasserElgammal\Green\Providers\CacheServiceProvider::class,
+            \YasserElgammal\Green\Providers\QueueServiceProvider::class,
         ];
 
         foreach ($providers as $provider) {

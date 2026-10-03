@@ -867,3 +867,51 @@ csrf_field() → CsrfTokenManager     CsrfMiddleware
 | [`CsrfMiddleware`](../src/Http/Middleware/CsrfMiddleware.php) | Intercepts all non-safe HTTP methods (POST, PUT, DELETE, PATCH). Skips configurable exception paths. |
 | [`CsrfTokenManager`](../src/Security/Csrf/CsrfTokenManager.php) | Generates cryptographic token pairs (`random_bytes`). Validates with timing-safe `hash_equals()`. Tokens are single-use (consumed on validation). |
 | [`CsrfConfig`](../src/Security/Csrf/CsrfConfig.php) | Configurable TTL (default: 30min), max active tokens (default: 50), session key, input/header names, and exception paths. |
+
+---
+
+## 22. Queue Architecture
+
+The Queue subsystem follows Green's philosophy of explicit dependency injection and clear domain managers, rejecting implicit global state and excessive magic (e.g., no Facades, no `ShouldQueue` markers).
+
+### Architecture
+
+```mermaid
+graph TD
+    A[Controller / Command] -->|Constructor Injection| B(QueueManager)
+    B -->|push| C{Driver: Database / Sync}
+    C -->|Stores / Executes| D[Job Data]
+    E[Worker] -->|Constructor Injection| B
+    E -->|pop & handle| C
+```
+
+| Component | Role |
+|---|---|
+| [`QueueManager`](../src/Queue/QueueManager.php) | Central entry point. Manages connection resolution and payload serialization (`encode`/`decode`). |
+| [`QueueDriverInterface`](../src/Queue/Contracts/QueueDriverInterface.php) | Contract for queue stores (`push`, `pop`, `delete`, `release`). |
+| [`JobInterface`](../src/Queue/Contracts/JobInterface.php) | Explicit contract for all jobs (`handle`, `maxAttempts`, `retryDelay`). |
+| [`Worker`](../src/Queue/Worker.php) | An independent, injectable tool that pulls jobs from the driver and processes them. |
+
+### Design Decisions
+
+- **No Dispatcher / Bus:** `QueueManager` directly proxies jobs to the selected driver.
+- **No Payload Class:** Serialization logic (`class` name and serialized object) is handled internally by the `QueueManager`, keeping the database schema generic.
+- **Explicit Jobs:** Jobs must implement `JobInterface`. There is no magic `ShouldQueue` trait.
+- **Constructor Injection:** The system expects you to inject `QueueManager` and `Worker` where needed (Controllers, Console Commands), rather than resolving them from a global helper or `$app` container.
+
+### Dispatching a Job
+
+```php
+use YasserElgammal\Green\Queue\QueueManager;
+
+class UserController
+{
+    public function __construct(private readonly QueueManager $queue) {}
+
+    public function store()
+    {
+        // Explicit dispatch via the manager
+        $this->queue->dispatch(new SendWelcomeEmail($user));
+    }
+}
+```
