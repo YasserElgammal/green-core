@@ -653,12 +653,28 @@ graph LR
     RL --> HM["HasManyLoader"]
     RL --> BT["BelongsToLoader"]
     RL --> MM["ManyToManyLoader"]
-    H1 & HM & BT & MM --> SQL["Single WHERE IN (...) Query"]
+    RL --> MT["MorphToLoader"]
+    RL --> MMy["MorphManyLoader"]
+    RL --> MO["MorphOneLoader"]
+    H1 & HM & BT & MM & MT & MMy & MO --> SQL["Single WHERE IN (...) Query"]
     SQL --> Stitch["Stitch Models in Memory"]
 ```
 
-- [`RelationRegistry`](../src/Database/Relations/RelationRegistry.php) — Maps relation types (`hasOne`, `hasMany`, `belongsTo`, `manyToMany`) to concrete `RelationLoader` implementations.
+- [`RelationRegistry`](../src/Database/Relations/RelationRegistry.php) — Maps relation types (`hasOne`, `hasMany`, `belongsTo`, `manyToMany`, `morphTo`, `morphMany`, `morphOne`) to concrete `RelationLoader` implementations.
 - **Single Query Eager Loading** — When `->include('posts.comments')` is called, the `Table` gathers all foreign keys and delegates to the appropriate `RelationLoader`. The loader executes exactly **one** `WHERE IN (...)` query and stitches the results back in memory.
+- **Polymorphic Loading** — `MorphToLoader` batches by type. It groups identical morph types and executes one `WHERE IN (...)` query per type, preventing N+1 queries. Types are safely resolved through the `MorphMap` registry.
+
+### Polymorphic Relations
+
+Polymorphic relations allow a model to belong to more than one other type of model on a single association. They require an explicit application-level mapping to prevent instantiation of arbitrary classes from database values.
+
+- [`MorphAlias`](../src/Database/Attributes/MorphAlias.php) — Attribute placed on the Model to declare its alias (e.g. `#[MorphAlias('post')]`).
+- [`MorphMap`](../src/Database/Relations/MorphMap.php) — Auto-discovers aliases from the `#[MorphAlias]` attributes, or acts as a manual registry override.
+- [`MorphTo`](../src/Database/Relations/MorphTo.php) — DTO defining the parent side (e.g. `$comment->commentable`). It accepts a `models` array and auto-registers them.
+- [`MorphMany`](../src/Database/Relations/MorphMany.php) — DTO defining the children side (e.g. `$post->comments`).
+- [`MorphOne`](../src/Database/Relations/MorphOne.php) — DTO defining a single child side (e.g. `$user->image`).
+
+Column names default to `{relation}_type` and `{relation}_id`. For example, a `commentable` relation looks for `commentable_type` and `commentable_id`.
 
 ### Defining Relations
 

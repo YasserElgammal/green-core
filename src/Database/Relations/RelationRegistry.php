@@ -21,6 +21,9 @@ class RelationRegistry
         'hasMany'     => HasManyLoader::class,
         'manyToMany'  => ManyToManyLoader::class,
         'belongsTo'   => BelongsToLoader::class,
+        'morphTo'     => MorphToLoader::class,
+        'morphMany'   => MorphManyLoader::class,
+        'morphOne'    => MorphOneLoader::class,
     ];
 
     /** @var array<string, RelationLoader> Cached loader instances */
