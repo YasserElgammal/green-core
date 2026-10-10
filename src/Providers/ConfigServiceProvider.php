@@ -12,6 +12,7 @@ use YasserElgammal\Green\Config\Environment;
 use YasserElgammal\Green\Config\Security\SecretRedactor;
 use YasserElgammal\Green\Config\Typed\ApplicationConfig;
 use YasserElgammal\Green\Config\Typed\CacheConfig;
+use YasserElgammal\Green\Config\Typed\QueueConfig;
 use YasserElgammal\Green\Config\Typed\DatabaseConfig;
 use YasserElgammal\Green\Config\Typed\LoggingConfig;
 use YasserElgammal\Green\Config\Typed\MailConfig;
@@ -36,7 +37,6 @@ final class ConfigServiceProvider extends ServiceProvider
             $cache,
         );
         $config = $manager->load($overrides);
-        $manager->lock();
 
         $this->app->instance(ConfigReaderInterface::class, $config);
         $this->app->instance(ConfigCache::class, $cache);
@@ -50,6 +50,10 @@ final class ConfigServiceProvider extends ServiceProvider
         $this->app->singleton(
             CacheConfig::class,
             fn () => CacheConfig::fromRepository($config),
+        );
+        $this->app->singleton(
+            QueueConfig::class,
+            fn () => QueueConfig::fromRepository($config),
         );
         $this->app->singleton(
             DatabaseConfig::class,

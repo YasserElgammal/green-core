@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2026-10-10
+
+### Added
+- Added repeatable `#[RelatesTo]` attributes for defining Table relations with Relation DTOs.
+- Added deterministic relation-definition precedence: attributes override `relations()` method entries, which override legacy `$relations` property entries with the same name.
+- Added a database seeding subsystem (`Database\Seeders`) for populating tables with initial or test data.
+- `Seeder` — abstract base class that all seeders extend. Declares an optional `$truncate` property listing tables to clear before `run()` is called.
+- `SeederRunner` — discovers and executes seeder files from `database/seeders/`, sorted alphabetically (numeric prefixes such as `001_`, `002_` control order). Each seeder runs inside a transaction; a failure rolls back and stops execution. Validates table names in `$truncate` to prevent injection.
+- `db:seed` console command — runs all seeders, a single named seeder (`--class=UserSeeder`), or performs a fresh truncate-then-seed pass (`--fresh`).
+- `create:seeder` console command — generates a seeder file from stub with an auto-incrementing numeric prefix.
+- `seeder.stub` — stub template for generated seeder files.
+- `getSeederRunner()` helper on `BaseCommand` — lazily resolves a `SeederRunner` pointing to `database/seeders/`, mirroring `getMigrationRunner()`.
+- Added support for Polymorphic Relations (`morphTo`, `morphMany`, `morphOne`) allowing a model to belong to more than one other type of model on a single association.
+- `#[MorphAlias]` — Attribute for Models to declare their morph alias.
+- `MorphMap` — Auto-discovers aliases from `#[MorphAlias]` or acts as a manual registry override.
+- `MorphTo` / `MorphMany` / `MorphOne` — Relation DTOs for defining polymorphic associations.
+- `MorphToLoader` / `MorphManyLoader` / `MorphOneLoader` — Eager loading strategies preventing N+1 queries.
+
+### Changed
+- Configuration is now assembled into a read-only `Repository` during bootstrap instead of relying on runtime locking.
+- Simplified the configuration manager lifecycle from `Collecting -> Loaded -> Locked` to `Unloaded -> Ready`.
+
+### Removed
+- Removed `MutableConfigInterface`, `LockableConfigInterface`, and the repository mutation and locking methods.
+
+### Upgrade Notes
+- Supply configuration changes through definitions, mapped environment variables, project config files, or `Application` constructor overrides; runtime repository mutation is no longer available.
+
 ## [2.8.1] - 2026-09-17
 
 ### Fixed

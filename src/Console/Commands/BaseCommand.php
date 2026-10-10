@@ -141,9 +141,26 @@ abstract class BaseCommand extends Command
         if ($runner === null) {
             $pdo = \YasserElgammal\Green\Database\Database::getConnection()->getNativeConnection();
             \YasserElgammal\Green\Database\Schema\Schema::setPdo($pdo);
-            
+
             $migrationsPath = $this->basePath('database/migrations');
             $runner = new \YasserElgammal\Green\Database\Migrations\MigrationRunner($pdo, $migrationsPath);
+        }
+
+        return $runner;
+    }
+
+    /**
+     * Lazily resolve the SeederRunner so we don't connect to the DB
+     * on every CLI boot.
+     */
+    protected function getSeederRunner(): \YasserElgammal\Green\Database\Seeders\SeederRunner
+    {
+        static $runner = null;
+
+        if ($runner === null) {
+            $pdo         = \YasserElgammal\Green\Database\Database::getConnection()->getNativeConnection();
+            $seedersPath = $this->basePath('database/seeders');
+            $runner      = new \YasserElgammal\Green\Database\Seeders\SeederRunner($pdo, $seedersPath);
         }
 
         return $runner;

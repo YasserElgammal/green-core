@@ -31,23 +31,30 @@ final class ConfigManagerTest extends TestCase
         rmdir($this->directory);
     }
 
-    public function test_lifecycle_must_load_then_lock(): void
+    public function test_lifecycle_becomes_ready_after_loading(): void
     {
         $manager = $this->manager();
-        self::assertSame(ConfigState::Collecting, $manager->state());
+        self::assertSame(ConfigState::Unloaded, $manager->state());
 
         $repository = $manager->load();
-        self::assertSame(ConfigState::Loaded, $manager->state());
-        $manager->lock();
 
-        self::assertSame(ConfigState::Locked, $manager->state());
-        self::assertTrue($repository->isLocked());
+        self::assertSame(ConfigState::Ready, $manager->state());
+        self::assertSame($repository, $manager->repository());
     }
 
-    public function test_invalid_lifecycle_transition_is_rejected(): void
+    public function test_configuration_cannot_be_loaded_twice(): void
+    {
+        $manager = $this->manager();
+        $manager->load();
+
+        $this->expectException(ConfigurationException::class);
+        $manager->load();
+    }
+
+    public function test_repository_is_unavailable_before_loading(): void
     {
         $this->expectException(ConfigurationException::class);
-        $this->manager()->lock();
+        $this->manager()->repository();
     }
 
     private function manager(): ConfigManager

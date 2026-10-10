@@ -1,0 +1,30 @@
+<?php
+
+use YasserElgammal\Green\Database\Seeders\Seeder;
+
+class {{ class }} extends Seeder
+{
+    /**
+     * Tables to truncate before seeding.
+     * Remove or leave empty to skip truncation.
+     *
+     * @var string[]
+     */
+    protected array $truncate = [];
+
+    /**
+     * Seed the database.
+     *
+     * Use your Table Gateway to insert rows:
+     *
+     *   $table = new \App\Tables\UserTable();
+     *   $table->insert([
+     *       'name'  => 'Admin',
+     *       'email' => 'admin@example.com',
+     *   ]);
+     */
+    public function run(): void
+    {
+        //
+    }
+}

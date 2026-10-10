@@ -25,6 +25,17 @@ final class InfrastructureConfigDefinition implements ConfigDefinitionInterface
                     'array' => ['driver' => 'array'],
                 ],
             ],
+            'queue' => [
+                'default' => 'sync',
+                'connections' => [
+                    'sync' => ['driver' => 'sync'],
+                    'database' => [
+                        'driver' => 'database',
+                        'table' => 'queue_jobs',
+                        'connection' => null,
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -38,6 +49,7 @@ final class InfrastructureConfigDefinition implements ConfigDefinitionInterface
             'translation.cache_path' => ['env' => 'APP_TRANSLATION_CACHE_PATH'],
             'view.cache' => ['env' => 'VIEW_CACHE', 'type' => 'bool'],
             'view.cache_path' => ['env' => 'VIEW_CACHE_PATH'],
+            'queue.default' => ['env' => 'QUEUE_CONNECTION'],
         ];
     }
 

@@ -37,7 +37,6 @@ final class ConfigCommandsTest extends TestCase
             $cache,
         );
         $repository = $manager->load();
-        $manager->lock();
 
         self::assertSame(0, (new CommandTester(new ConfigCacheCommand($repository, $cache, $manager)))->execute([]));
         self::assertFileExists($this->path);

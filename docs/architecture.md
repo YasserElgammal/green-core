@@ -71,7 +71,6 @@ new Application(overrides, basePath, configDefinitions)
   ├── ConfigServiceProvider::bootstrap()
   │   ├── Build DefinitionRegistry
   │   ├── ConfigManager::load()
-  │   ├── ConfigManager::lock()
   │   ├── Bind narrow config contracts
   │   └── Bind immutable typed configuration objects
   ├── registerCoreProviders()
@@ -80,7 +79,7 @@ new Application(overrides, basePath, configDefinitions)
   └── Resolve Router
 ```
 
-1. **Configuration bootstrap** — [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) assembles definitions and sources, loads and locks the resulting snapshot, then binds its read contract and typed settings before any runtime provider is registered.
+1. **Configuration bootstrap** — [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) assembles definitions and sources into a final read-only repository, then binds its read contract and typed settings before any runtime provider is registered.
 2. **Core provider registration** — Fundamental services are bound without reading `$_ENV`, PHP config files, or global state directly.
 3. **Configured provider registration** — Additional providers are read from the immutable [`ApplicationConfig`](../src/Config/Typed/ApplicationConfig.php).
 4. **Provider boot** — Post-registration work runs after every binding exists. Examples include initializing Twig, installing error handlers, and publishing the configured `Translator`.
@@ -97,7 +96,7 @@ individual PHP files.
 - **One effective configuration snapshot** for the entire application.
 - **Deterministic precedence** between configuration sources.
 - **No configuration drift** between the repository and resolved singletons.
-- **Narrow dependencies** through read, mutation, and lifecycle contracts.
+- **Narrow dependencies** through a read-only runtime contract.
 - **Module extensibility** without editing `Application`.
 - **Safe diagnostics** that redact credentials and tokens.
 - **Production caching** with compatibility fingerprints.
@@ -112,8 +111,8 @@ is preserved in the [future configuration validation plan](plans/config-validati
 
 | Component | Responsibility |
 |---|---|
-| [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) | Composition root for the configuration subsystem. Creates and locks the snapshot, then binds the read contract, manager, registry, redactor, cache, and typed configuration objects. |
-| [`ConfigManager`](../src/Config/ConfigManager.php) | Enforces loading and locking in the correct order. |
+| [`ConfigServiceProvider`](../src/Providers/ConfigServiceProvider.php) | Composition root for the configuration subsystem. Creates the final read-only snapshot, then binds the read contract, manager, registry, redactor, cache, and typed configuration objects. |
+| [`ConfigManager`](../src/Config/ConfigManager.php) | Loads the effective configuration once and exposes it after it is ready. |
 | [`DefinitionRegistry`](../src/Config/DefinitionRegistry.php) | Aggregates defaults and environment mappings from registered modules. |
 | [`ConfigDefinitionInterface`](../src/Config/Contracts/ConfigDefinitionInterface.php) | Contract implemented by every configuration module. |
 | [`Loader`](../src/Config/Loader.php) | Executes configuration sources in precedence order and merges their results. |
@@ -216,19 +215,18 @@ definition does not require editing `Application`, `ConfigManager`, or `Loader`.
 
 #### Lifecycle and immutability
 
-The manager enforces a strict state machine:
+The manager enforces a small load-once lifecycle:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Collecting
-    Collecting --> Loaded: load()
-    Loaded --> Locked: lock()
-    Locked --> [*]
+    [*] --> Unloaded
+    Unloaded --> Ready: load()
+    Ready --> [*]
 ```
 
-Invalid transitions throw `ConfigurationException`. Once locked, `set()` and
-`merge()` also throw. Overrides must therefore be supplied before provider
-registration:
+Calling `load()` more than once or requesting the repository before it is ready
+throws `ConfigurationException`. The repository has no mutation API; overrides
+must therefore be supplied at the composition boundary:
 
 ```php
 $app = new Application(
@@ -237,8 +235,9 @@ $app = new Application(
 );
 ```
 
-This rule guarantees that a resolved `ConnectionPool`, mail transport, logger, or
-cache manager cannot retain settings different from the repository snapshot.
+This construction model guarantees that a resolved `ConnectionPool`, mail
+transport, logger, or cache manager cannot retain settings different from a
+later-mutated repository snapshot.
 
 #### Contracts and dependency direction
 
@@ -247,8 +246,6 @@ The subsystem follows Interface Segregation:
 | Contract | Capability | Intended consumer |
 |---|---|---|
 | [`ConfigReaderInterface`](../src/Config/Contracts/ConfigReaderInterface.php) | `get`, `has`, `all` | Read-only consumers and diagnostic commands. |
-| [`MutableConfigInterface`](../src/Config/Contracts/MutableConfigInterface.php) | Read plus `set`, `merge` | Internal repository/manager composition only; it is not bound for runtime services. |
-| [`LockableConfigInterface`](../src/Config/Contracts/LockableConfigInterface.php) | `lock`, `isLocked` | Internal lifecycle management only; it is not bound for runtime services. |
 | [`ConfigRedactorInterface`](../src/Config/Contracts/ConfigRedactorInterface.php) | Safe diagnostic transformation | `config:show` and observability tools. |
 
 Infrastructure services normally receive immutable typed objects instead of the
@@ -278,7 +275,7 @@ the composition boundary and gives runtime services type-safe values.
         'fingerprint' => '...',
     ],
     'config' => [
-        // merged and locked snapshot
+        // final read-only snapshot
     ],
 ]
 ```
@@ -656,12 +653,38 @@ graph LR
     RL --> HM["HasManyLoader"]
     RL --> BT["BelongsToLoader"]
     RL --> MM["ManyToManyLoader"]
-    H1 & HM & BT & MM --> SQL["Single WHERE IN (...) Query"]
+    RL --> MT["MorphToLoader"]
+    RL --> MMy["MorphManyLoader"]
+    RL --> MO["MorphOneLoader"]
+    H1 & HM & BT & MM & MT & MMy & MO --> SQL["Single WHERE IN (...) Query"]
     SQL --> Stitch["Stitch Models in Memory"]
 ```
 
-- [`RelationRegistry`](../src/Database/Relations/RelationRegistry.php) — Maps relation types (`hasOne`, `hasMany`, `belongsTo`, `manyToMany`) to concrete `RelationLoader` implementations.
+- [`RelationRegistry`](../src/Database/Relations/RelationRegistry.php) — Maps relation types (`hasOne`, `hasMany`, `belongsTo`, `manyToMany`, `morphTo`, `morphMany`, `morphOne`) to concrete `RelationLoader` implementations.
 - **Single Query Eager Loading** — When `->include('posts.comments')` is called, the `Table` gathers all foreign keys and delegates to the appropriate `RelationLoader`. The loader executes exactly **one** `WHERE IN (...)` query and stitches the results back in memory.
+- **Polymorphic Loading** — `MorphToLoader` batches by type. It groups identical morph types and executes one `WHERE IN (...)` query per type, preventing N+1 queries. Types are safely resolved through the `MorphMap` registry.
+
+### Polymorphic Relations
+
+Polymorphic relations allow a model to belong to more than one other type of model on a single association. They require an explicit application-level mapping to prevent instantiation of arbitrary classes from database values.
+
+- [`MorphAlias`](../src/Database/Attributes/MorphAlias.php) — Attribute placed on the Model to declare its alias (e.g. `#[MorphAlias('post')]`).
+- [`MorphMap`](../src/Database/Relations/MorphMap.php) — Auto-discovers aliases from the `#[MorphAlias]` attributes, or acts as a manual registry override.
+- [`MorphTo`](../src/Database/Relations/MorphTo.php) — DTO defining the parent side (e.g. `$comment->commentable`). It accepts a `models` array and auto-registers them.
+- [`MorphMany`](../src/Database/Relations/MorphMany.php) — DTO defining the children side (e.g. `$post->comments`).
+- [`MorphOne`](../src/Database/Relations/MorphOne.php) — DTO defining a single child side (e.g. `$user->image`).
+
+Column names default to `{relation}_type` and `{relation}_id`. For example, a `commentable` relation looks for `commentable_type` and `commentable_id`.
+
+### Defining Relations
+
+Relations are defined on the Table class, keeping Models as pure DTOs. When the same relation name is declared in more than one format, the priority from highest to lowest is:
+
+1. **`#[RelatesTo]` attribute — highest priority.** If an attribute defines the relation, it overrides definitions with the same name in both the `relations()` method and the `$relations` property. This is the recommended, type-safe format.
+2. **`relations()` method — second priority.** If no attribute defines the relation, the value returned by this method overrides a definition with the same name in the `$relations` property. Use it for programmatic relation definitions.
+3. **`$relations` property — lowest priority.** This legacy format supplies the baseline definition and is used only when neither an attribute nor the `relations()` method overrides that relation name.
+
+After applying this precedence, `Table::resolveRelationDefaults()` fills any inferred keys and normalizes Relation DTOs into configuration arrays, ensuring the relation loader strategies and the IQL parser continue to operate on predictable data structures.
 
 ### Include Query Language (IQL)
 
@@ -675,7 +698,7 @@ Pipeline: **Raw String → Parse (AST) → Validate → Resolve (Closure constra
 
 The resolved closures modify the underlying `QueryBuilder` before the relation is fetched.
 
-Nested validation supports both legacy relation arrays and modern relation DTOs returned by a protected `relations()` method. The validator resolves the related model's conventional Table class (for example, `App\Models\Comment` to `App\Tables\CommentTable`), reads its relation definitions without invoking the database-dependent Table constructor, converts `Relation` DTOs to configuration arrays, and validates the child node recursively.
+Nested validation resolves the related model's conventional Table class, reads its relation definitions without invoking the database-dependent Table constructor, converts any Relation DTOs or attributes to configuration arrays, and validates the child node recursively.
 
 ---
 
@@ -860,3 +883,51 @@ csrf_field() → CsrfTokenManager     CsrfMiddleware
 | [`CsrfMiddleware`](../src/Http/Middleware/CsrfMiddleware.php) | Intercepts all non-safe HTTP methods (POST, PUT, DELETE, PATCH). Skips configurable exception paths. |
 | [`CsrfTokenManager`](../src/Security/Csrf/CsrfTokenManager.php) | Generates cryptographic token pairs (`random_bytes`). Validates with timing-safe `hash_equals()`. Tokens are single-use (consumed on validation). |
 | [`CsrfConfig`](../src/Security/Csrf/CsrfConfig.php) | Configurable TTL (default: 30min), max active tokens (default: 50), session key, input/header names, and exception paths. |
+
+---
+
+## 22. Queue Architecture
+
+The Queue subsystem follows Green's philosophy of explicit dependency injection and clear domain managers, rejecting implicit global state and excessive magic (e.g., no Facades, no `ShouldQueue` markers).
+
+### Architecture
+
+```mermaid
+graph TD
+    A[Controller / Command] -->|Constructor Injection| B(QueueManager)
+    B -->|push| C{Driver: Database / Sync}
+    C -->|Stores / Executes| D[Job Data]
+    E[Worker] -->|Constructor Injection| B
+    E -->|pop & handle| C
+```
+
+| Component | Role |
+|---|---|
+| [`QueueManager`](../src/Queue/QueueManager.php) | Central entry point. Manages connection resolution and payload serialization (`encode`/`decode`). |
+| [`QueueDriverInterface`](../src/Queue/Contracts/QueueDriverInterface.php) | Contract for queue stores (`push`, `pop`, `delete`, `release`). |
+| [`JobInterface`](../src/Queue/Contracts/JobInterface.php) | Explicit contract for all jobs (`handle`, `maxAttempts`, `retryDelay`). |
+| [`Worker`](../src/Queue/Worker.php) | An independent, injectable tool that pulls jobs from the driver and processes them. |
+
+### Design Decisions
+
+- **No Dispatcher / Bus:** `QueueManager` directly proxies jobs to the selected driver.
+- **No Payload Class:** Serialization logic (`class` name and serialized object) is handled internally by the `QueueManager`, keeping the database schema generic.
+- **Explicit Jobs:** Jobs must implement `JobInterface`. There is no magic `ShouldQueue` trait.
+- **Constructor Injection:** The system expects you to inject `QueueManager` and `Worker` where needed (Controllers, Console Commands), rather than resolving them from a global helper or `$app` container.
+
+### Dispatching a Job
+
+```php
+use YasserElgammal\Green\Queue\QueueManager;
+
+class UserController
+{
+    public function __construct(private readonly QueueManager $queue) {}
+
+    public function store()
+    {
+        // Explicit dispatch via the manager
+        $this->queue->dispatch(new SendWelcomeEmail($user));
+    }
+}
+```

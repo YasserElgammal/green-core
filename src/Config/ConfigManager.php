@@ -10,7 +10,7 @@ use YasserElgammal\Green\Config\Sources\PhpFileSource;
 
 final class ConfigManager
 {
-    private ConfigState $state = ConfigState::Collecting;
+    private ConfigState $state = ConfigState::Unloaded;
     private ?Repository $repository = null;
 
     public function __construct(
@@ -23,7 +23,7 @@ final class ConfigManager
 
     public function load(array $overrides = []): Repository
     {
-        $this->expect(ConfigState::Collecting);
+        $this->expect(ConfigState::Unloaded);
         $fingerprint = $this->definitions->fingerprint($this->basePath);
         $loader = new Loader();
 
@@ -37,16 +37,9 @@ final class ConfigManager
 
         $loader->addSource(new ArraySource($overrides));
         $this->repository = new Repository($loader->load());
-        $this->state = ConfigState::Loaded;
+        $this->state = ConfigState::Ready;
 
         return $this->repository;
-    }
-
-    public function lock(): void
-    {
-        $this->expect(ConfigState::Loaded);
-        $this->repository()->lock();
-        $this->state = ConfigState::Locked;
     }
 
     public function state(): ConfigState

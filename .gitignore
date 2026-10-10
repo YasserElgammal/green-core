@@ -1,26 +1,5 @@
-# Environment files
-.env
-.env.local
-.env.*.local
-.env.backup
-
 # Vendor directory
 /vendor/
-
-# Node modules if using frontend
-/node_modules/
-
-# Logs and cache
-/storage/logs/
-storage/framework/cache/
-storage/framework/sessions/
-storage/framework/views/
-
-# Compiled files
-/public/build/
-/public/hot/
-/public/storage/
-/*.log
 
 # IDE & OS files
 .idea/
@@ -28,18 +7,14 @@ storage/framework/views/
 *.swp
 .DS_Store
 
-# Composer
+# Composer (In libraries, it's optional, but usually ignored)
 composer.lock
 
 # PHPUnit
-phpunit.xml
 phpunit.result.cache
-
-# Temporary files
-*.tmp
-*.bak
-*.old
-
-# Tests
-.database/
 .phpunit.cache/
+
+# Tests & Environment
+.env
+.database/
+/outputs/

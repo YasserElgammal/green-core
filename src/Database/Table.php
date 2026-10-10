@@ -64,11 +64,19 @@ class Table
     /**
      * Relation registry defined by subclasses.
      *
-     * Recommended — use Relation DTOs (smart defaults, IDE support):
+     * Recommended (Modern PHP 8) — use Attributes:
      *
+     *   use YasserElgammal\Green\Database\Relations\RelatesTo;
      *   use YasserElgammal\Green\Database\Relations\BelongsTo;
      *   use YasserElgammal\Green\Database\Relations\HasMany;
      *   use YasserElgammal\Green\Database\Relations\ManyToMany;
+     *
+     *   #[RelatesTo('posts', new HasMany(Post::class))]
+     *   #[RelatesTo('author', new BelongsTo(User::class))]
+     *   #[RelatesTo('roles', new ManyToMany(Role::class, pivot: 'user_roles'))]
+     *   class UserTable extends Table { ... }
+     *
+     * Alternative (Fallback) — use relations() method:
      *
      *   protected function relations(): array
      *   {
@@ -139,6 +147,14 @@ class Table
 
         if (method_exists($this, 'relations')) {
             $this->relations = array_merge($this->relations, $this->relations());
+        }
+
+        $reflection = new \ReflectionClass($this);
+        $attributes = $reflection->getAttributes(\YasserElgammal\Green\Database\Relations\RelatesTo::class);
+        foreach ($attributes as $attribute) {
+            /** @var \YasserElgammal\Green\Database\Relations\RelatesTo $relatesTo */
+            $relatesTo = $attribute->newInstance();
+            $this->relations[$relatesTo->name] = $relatesTo->relation;
         }
 
         $this->resolveRelationDefaults();
