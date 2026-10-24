@@ -2,19 +2,40 @@
 
 namespace YasserElgammal\Green;
 
+use YasserElgammal\Green\Connect\Connect;
+use YasserElgammal\Green\Connect\ConnectManager;
 use YasserElgammal\Green\Container\Container;
 use YasserElgammal\Green\Config\Typed\ApplicationConfig;
-use YasserElgammal\Green\Http\Request;
-use YasserElgammal\Green\Http\Response;
+use YasserElgammal\Green\ErrorHandling\GreenErrorKernel;
+use YasserElgammal\Green\Http\{Request, Response};
+use YasserElgammal\Green\Logging\LogManager;
 use YasserElgammal\Green\Routing\Router;
 use YasserElgammal\Green\Exceptions\ExceptionHandler;
-use YasserElgammal\Green\Signal\LifecycleSignals;
-use YasserElgammal\Green\Signal\SignalDispatcher;
+use YasserElgammal\Green\Signal\{LifecycleSignals, SignalDispatcher};
 use YasserElgammal\Green\Support\ServiceProvider;
+use YasserElgammal\Green\Auth\Auth;
+use YasserElgammal\Green\Providers\{
+    ConfigServiceProvider,
+    LogServiceProvider,
+    ErrorServiceProvider,
+    DriveServiceProvider,
+    ConnectServiceProvider,
+    RoutingServiceProvider,
+    ValidationServiceProvider,
+    ViewServiceProvider,
+    TranslationServiceProvider,
+    SignalServiceProvider,
+    AuthServiceProvider,
+    SessionServiceProvider,
+    DatabaseServiceProvider,
+    CacheServiceProvider,
+    QueueServiceProvider,
+};
 
 class Application extends Container
 {
     private array $providers = [];
+    private int $handlingDepth = 0;
     private string $basePath;
     public Router $router;
 
@@ -22,8 +43,7 @@ class Application extends Container
         array $configOverrides = [],
         ?string $basePath = null,
         iterable $configDefinitions = [],
-    )
-    {
+    ) {
         $this->basePath = $this->resolveBasePath($basePath);
 
         $this->instance(Application::class, $this);
@@ -40,7 +60,7 @@ class Application extends Container
 
     private function loadConfiguration(array $overrides, iterable $configDefinitions = []): void
     {
-        (new \YasserElgammal\Green\Providers\ConfigServiceProvider($this))
+        (new ConfigServiceProvider($this))
             ->bootstrap($overrides, $configDefinitions);
     }
 
@@ -62,20 +82,20 @@ class Application extends Container
     private function registerCoreProviders(): void
     {
         $providers = [
-            \YasserElgammal\Green\Providers\LogServiceProvider::class,
-            \YasserElgammal\Green\Providers\ErrorServiceProvider::class,
-            \YasserElgammal\Green\Providers\DriveServiceProvider::class,
-            \YasserElgammal\Green\Providers\ConnectServiceProvider::class,
-            \YasserElgammal\Green\Providers\RoutingServiceProvider::class,
-            \YasserElgammal\Green\Providers\ValidationServiceProvider::class,
-            \YasserElgammal\Green\Providers\ViewServiceProvider::class,
-            \YasserElgammal\Green\Providers\TranslationServiceProvider::class,
-            \YasserElgammal\Green\Providers\SignalServiceProvider::class,
-            \YasserElgammal\Green\Providers\AuthServiceProvider::class,
-            \YasserElgammal\Green\Providers\SessionServiceProvider::class,
-            \YasserElgammal\Green\Providers\DatabaseServiceProvider::class,
-            \YasserElgammal\Green\Providers\CacheServiceProvider::class,
-            \YasserElgammal\Green\Providers\QueueServiceProvider::class,
+            LogServiceProvider::class,
+            ErrorServiceProvider::class,
+            DriveServiceProvider::class,
+            ConnectServiceProvider::class,
+            RoutingServiceProvider::class,
+            ValidationServiceProvider::class,
+            ViewServiceProvider::class,
+            TranslationServiceProvider::class,
+            SignalServiceProvider::class,
+            AuthServiceProvider::class,
+            SessionServiceProvider::class,
+            DatabaseServiceProvider::class,
+            CacheServiceProvider::class,
+            QueueServiceProvider::class,
         ];
 
         foreach ($providers as $provider) {
@@ -109,43 +129,57 @@ class Application extends Container
 
     public function handle(Request $request): Response
     {
+        $auth = $this->has(Auth::class) ? $this->make(Auth::class) : new Auth();
+        $auth->beginRequest($request);
+        $nested = $this->handlingDepth > 0;
+        $this->handlingDepth++;
+        $previousRequest = $this->instances[Request::class] ?? null;
         $this->instance(Request::class, $request);
-        $signals = $this->make(SignalDispatcher::class);
 
         try {
-            $signals->emit(LifecycleSignals::REQUEST_RECEIVED, ['request' => $request]);
-            $response = $this->router->dispatch($request);
-        } catch (\Throwable $e) {
-            $this->emitLifecycleSignalSafely($signals, LifecycleSignals::EXCEPTION_OCCURRED, [
+            $signals = $this->make(SignalDispatcher::class);
+            try {
+                $signals->emit(LifecycleSignals::REQUEST_RECEIVED, ['request' => $request]);
+                $response = $this->router->dispatch($request);
+            } catch (\Throwable $e) {
+                $this->emitLifecycleSignalSafely($signals, LifecycleSignals::EXCEPTION_OCCURRED, [
+                    'request' => $request,
+                    'exception' => $e,
+                ]);
+
+                try {
+                    $response = $this->make(ExceptionHandler::class)->handle($e, $request);
+                } catch (\Throwable $handlerError) {
+                    error_log(sprintf(
+                        '[Green] Exception handler failed: %s; original error: %s',
+                        $handlerError->getMessage(),
+                        $e->getMessage(),
+                    ));
+
+                    $response = new Response(
+                        'Internal Server Error',
+                        500,
+                        ['Content-Type' => 'text/plain; charset=UTF-8'],
+                    );
+                }
+            }
+
+            $this->emitLifecycleSignalSafely($signals, LifecycleSignals::REQUEST_HANDLED, [
                 'request' => $request,
-                'exception' => $e,
+                'response' => $response,
             ]);
 
-            try {
-                $response = $this->make(ExceptionHandler::class)->handle($e, $request);
-            } catch (\Throwable $handlerError) {
-                // Error rendering depends on infrastructure too (container, logger,
-                // templates), so it needs an independent last-resort response.
-                error_log(sprintf(
-                    '[Green] Exception handler failed: %s; original error: %s',
-                    $handlerError->getMessage(),
-                    $e->getMessage(),
-                ));
+            return $response;
+        } finally {
+            $auth->endRequest($request);
+            $this->handlingDepth--;
 
-                $response = new Response(
-                    'Internal Server Error',
-                    500,
-                    ['Content-Type' => 'text/plain; charset=UTF-8'],
-                );
+            if ($nested && $previousRequest instanceof Request) {
+                $this->instance(Request::class, $previousRequest);
+            } elseif ($nested) {
+                unset($this->instances[Request::class]);
             }
         }
-
-        $this->emitLifecycleSignalSafely($signals, LifecycleSignals::REQUEST_HANDLED, [
-            'request' => $request,
-            'response' => $response,
-        ]);
-
-        return $response;
     }
 
     private function emitLifecycleSignalSafely(
@@ -167,23 +201,23 @@ class Application extends Container
 
     // --- Backward Compatibility Methods ---
 
-    public function getLogManager(): \YasserElgammal\Green\Logging\LogManager
+    public function getLogManager(): LogManager
     {
-        return $this->make(\YasserElgammal\Green\Logging\LogManager::class);
+        return $this->make(LogManager::class);
     }
 
-    public function getErrorKernel(): \YasserElgammal\Green\ErrorHandling\GreenErrorKernel
+    public function getErrorKernel(): GreenErrorKernel
     {
-        return $this->make(\YasserElgammal\Green\ErrorHandling\GreenErrorKernel::class);
+        return $this->make(GreenErrorKernel::class);
     }
 
-    public function getConnect(): \YasserElgammal\Green\Connect\Connect
+    public function getConnect(): Connect
     {
-        return $this->make(\YasserElgammal\Green\Connect\Connect::class);
+        return $this->make(Connect::class);
     }
 
-    public function getConnectManager(): \YasserElgammal\Green\Connect\ConnectManager
+    public function getConnectManager(): ConnectManager
     {
-        return $this->make(\YasserElgammal\Green\Connect\ConnectManager::class);
+        return $this->make(ConnectManager::class);
     }
 }

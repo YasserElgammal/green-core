@@ -22,6 +22,7 @@ abstract class Payload extends Request
         );
 
         $this->attributes = $request->attributes;
+        $this->shareUserStateWith($request);
         
         $this->prepareForValidation();
         

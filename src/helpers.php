@@ -24,6 +24,7 @@ use YasserElgammal\Green\Debug\Renderers\CliRenderer;
 use YasserElgammal\Green\Debug\Renderers\HtmlRenderer;
 use YasserElgammal\Green\Signal\SignalDispatcher;
 use YasserElgammal\Green\Auth\Authorizer;
+use YasserElgammal\Green\Auth\Auth;
 use YasserElgammal\Green\Cache\CacheManager;
 
 $GLOBALS['__green_started_at'] ??= $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
@@ -302,6 +303,13 @@ if (!function_exists('authorizer')) {
     function authorizer(): Authorizer
     {
         return app(Authorizer::class);
+    }
+}
+
+if (!function_exists('auth')) {
+    function auth(): Auth
+    {
+        return app(Auth::class);
     }
 }
 

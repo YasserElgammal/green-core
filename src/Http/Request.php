@@ -12,6 +12,10 @@ class Request
     public array $files;
     public array $cookies;
     public array $attributes = [];
+    private ?object $user = null;
+    private bool $userResolved = false;
+    private ?string $userResolvedBy = null;
+    private ?self $userStateSource = null;
 
     public function __construct(
         array $query = [],
@@ -54,12 +58,58 @@ class Request
 
     public function setAttribute(string $key, mixed $value): void
     {
+        if ($key === 'user') {
+            if ($value !== null && !is_object($value)) {
+                throw new \InvalidArgumentException('The request user must be an object or null.');
+            }
+
+            $this->setUser($value);
+            return;
+        }
+
         $this->attributes[$key] = $value;
     }
 
     public function getAttribute(string $key, mixed $default = null): mixed
     {
+        if ($key === 'user' && $this->hasResolvedUser()) {
+            return $this->user();
+        }
+
         return $this->attributes[$key] ?? $default;
+    }
+
+    public function setUser(?object $user, ?string $resolvedBy = null): void
+    {
+        if ($this->userStateSource !== null) {
+            $this->userStateSource->setUser($user, $resolvedBy);
+            return;
+        }
+
+        $this->user = $user;
+        $this->userResolved = true;
+        $this->userResolvedBy = $resolvedBy;
+        $this->attributes['user'] = $user;
+    }
+
+    public function user(): ?object
+    {
+        return $this->userStateSource?->user() ?? $this->user;
+    }
+
+    public function hasResolvedUser(): bool
+    {
+        return $this->userStateSource?->hasResolvedUser() ?? $this->userResolved;
+    }
+
+    public function userResolvedBy(): ?string
+    {
+        return $this->userStateSource?->userResolvedBy() ?? $this->userResolvedBy;
+    }
+
+    protected function shareUserStateWith(self $request): void
+    {
+        $this->userStateSource = $request;
     }
 
     public function header(string $name, ?string $default = null): ?string

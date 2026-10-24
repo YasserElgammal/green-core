@@ -43,7 +43,7 @@ final class PolicyMiddleware implements MiddlewareInterface
             $policy = $attribute->newInstance();
             $subject = $vars[$policy->subject] ?? $policy->subject;
 
-            $authorizer->authorize($policy->ability, $subject);
+            $authorizer->authorize($policy->ability, $subject, auth()->user());
         }
     }
 }
