@@ -955,10 +955,96 @@ class Table
      */
     public function paginateFromBuilder(QueryBuilder $qb, int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
+        // Resolve page from GET if available
+        $page = (int) ($_GET['page'] ?? $page);
+
         $paginator     = new Paginator();
         $result        = $paginator->paginate($qb, $perPage, $page, $withCount);
         $result['data'] = $this->loadIncludes($this->hydrate($result['data']));
         return $result;
+    }
+
+    /**
+     * Process results from a raw QueryBuilder in fixed-size OFFSET chunks.
+     *
+     * @param  int       $size      Number of rows per chunk (must be >= 1)
+     * @param  callable  $callback  fn(Model[] $models, int $page): ?bool
+     */
+    public function chunkFromBuilder(QueryBuilder $qb, int $size, callable $callback): void
+    {
+        if ($size < 1) {
+            throw new \InvalidArgumentException("Chunk size must be at least 1, got [{$size}].");
+        }
+
+        $page = 1;
+
+        do {
+            $chunkQb = clone $qb;
+            $chunkQb->setFirstResult(($page - 1) * $size)
+                    ->setMaxResults($size);
+
+            $rows = $chunkQb->executeQuery()->fetchAllAssociative();
+
+            if (empty($rows)) {
+                break;
+            }
+
+            $fetchedCount = count($rows);
+            $models       = $this->loadIncludes($this->hydrate($rows));
+
+            if ($callback($models, $page) === false) {
+                break;
+            }
+
+            $page++;
+            unset($models, $rows);
+
+        } while ($fetchedCount === $size);
+    }
+
+    /**
+     * Process results from a raw QueryBuilder in chunks using keyset pagination.
+     *
+     * @param  int          $size      Number of rows per chunk (must be >= 1)
+     * @param  callable     $callback  fn(Model[] $models): ?bool
+     * @param  string|null  $column    Column to paginate on (defaults to primary key)
+     */
+    public function chunkByIdFromBuilder(QueryBuilder $qb, int $size, callable $callback, ?string $column = null): void
+    {
+        if ($size < 1) {
+            throw new \InvalidArgumentException("Chunk size must be at least 1, got [{$size}].");
+        }
+
+        $column ??= $this->primaryKey;
+        $lastId   = null;
+
+        do {
+            $chunkQb = clone $qb;
+            $chunkQb->orderBy($column, 'ASC')
+                    ->setMaxResults($size);
+
+            if ($lastId !== null) {
+                $chunkQb->andWhere("{$column} > :_chunk_last_id")
+                        ->setParameter('_chunk_last_id', $lastId);
+            }
+
+            $rows = $chunkQb->executeQuery()->fetchAllAssociative();
+
+            if (empty($rows)) {
+                break;
+            }
+
+            $fetchedCount = count($rows);
+            $lastId       = end($rows)[$column];
+            $models       = $this->loadIncludes($this->hydrate($rows));
+
+            if ($callback($models) === false) {
+                break;
+            }
+
+            unset($models, $rows);
+
+        } while ($fetchedCount === $size);
     }
 
     // ─── Persist ──────────────────────────────────────────────────────────────
@@ -1221,6 +1307,154 @@ class Table
         return $instance;
     }
 
+    // ─── Chunked Processing ──────────────────────────────────────────────────
+
+    /**
+     * Process query results in fixed-size chunks to keep memory usage constant.
+     *
+     * Uses OFFSET-based pagination internally. Each chunk is hydrated and
+     * has all pending includes loaded before being passed to the callback.
+     * Returning `false` from the callback stops iteration early.
+     *
+     * Memory usage is O(chunk_size) regardless of total row count.
+     *
+     * Usage:
+     *   $table->include('posts')->chunk(500, function (array $users, int $page) {
+     *       foreach ($users as $user) {
+     *           exportUser($user);
+     *       }
+     *   });
+     *
+     * @param  int       $size      Number of rows per chunk (must be >= 1)
+     * @param  callable  $callback  fn(Model[] $models, int $page): ?bool
+     */
+    public function chunk(int $size, callable $callback): void
+    {
+        if ($size < 1) {
+            throw new \InvalidArgumentException("Chunk size must be at least 1, got [{$size}].");
+        }
+
+        // Snapshot pending state so it can be re-applied for each chunk's
+        // eager-loading pass (loadIncludes resets pendingIncludes internally).
+        $savedIncludes     = $this->pendingIncludes;
+        $savedResolved     = $this->pendingResolved;
+        $savedAggregations = $this->pendingAggregations;
+
+        $page = 1;
+
+        do {
+            $qb = $this->builder()
+                ->setFirstResult(($page - 1) * $size)
+                ->setMaxResults($size);
+
+            $rows = $qb->executeQuery()->fetchAllAssociative();
+
+            if (empty($rows)) {
+                break;
+            }
+
+            $fetchedCount = count($rows);
+
+            // Restore pending state for this chunk's loadIncludes pass
+            $this->pendingIncludes     = $savedIncludes;
+            $this->pendingResolved     = $savedResolved;
+            $this->pendingAggregations = $savedAggregations;
+
+            $models = $this->loadIncludes($this->hydrate($rows));
+
+            if ($callback($models, $page) === false) {
+                break;
+            }
+
+            $page++;
+            unset($models, $rows);
+
+        } while ($fetchedCount === $size);
+
+        // Clean up pending state
+        $this->pendingSelect       = [];
+        $this->pendingIncludes     = [];
+        $this->pendingResolved     = [];
+        $this->pendingAggregations = [];
+    }
+
+    /**
+     * Process query results in chunks using keyset (cursor) pagination.
+     *
+     * Instead of OFFSET (which degrades at high page numbers), this method
+     * uses `WHERE column > :lastId ORDER BY column ASC LIMIT :size` — giving
+     * O(1) performance per chunk regardless of how deep into the dataset
+     * we are. Each chunk is hydrated with eager-loaded includes.
+     *
+     * Returning `false` from the callback stops iteration early.
+     *
+     * Usage:
+     *   $table->include('posts')->chunkById(500, function (array $users) {
+     *       foreach ($users as $user) {
+     *           exportUser($user);
+     *       }
+     *   });
+     *
+     * @param  int          $size      Number of rows per chunk (must be >= 1)
+     * @param  callable     $callback  fn(Model[] $models): ?bool
+     * @param  string|null  $column    Column to paginate on (defaults to primary key)
+     */
+    public function chunkById(int $size, callable $callback, ?string $column = null): void
+    {
+        if ($size < 1) {
+            throw new \InvalidArgumentException("Chunk size must be at least 1, got [{$size}].");
+        }
+
+        $column ??= $this->primaryKey;
+
+        // Snapshot pending state so it can be re-applied for each chunk
+        $savedIncludes     = $this->pendingIncludes;
+        $savedResolved     = $this->pendingResolved;
+        $savedAggregations = $this->pendingAggregations;
+
+        $lastId = null;
+
+        do {
+            $qb = $this->builder()
+                ->orderBy($column, 'ASC')
+                ->setMaxResults($size);
+
+            if ($lastId !== null) {
+                $qb->andWhere("{$column} > :_chunk_last_id")
+                   ->setParameter('_chunk_last_id', $lastId);
+            }
+
+            $rows = $qb->executeQuery()->fetchAllAssociative();
+
+            if (empty($rows)) {
+                break;
+            }
+
+            $fetchedCount = count($rows);
+            $lastId       = end($rows)[$column];
+
+            // Restore pending state for this chunk's loadIncludes pass
+            $this->pendingIncludes     = $savedIncludes;
+            $this->pendingResolved     = $savedResolved;
+            $this->pendingAggregations = $savedAggregations;
+
+            $models = $this->loadIncludes($this->hydrate($rows));
+
+            if ($callback($models) === false) {
+                break;
+            }
+
+            unset($models, $rows);
+
+        } while ($fetchedCount === $size);
+
+        // Clean up pending state
+        $this->pendingSelect       = [];
+        $this->pendingIncludes     = [];
+        $this->pendingResolved     = [];
+        $this->pendingAggregations = [];
+    }
+
     // ─── Pagination ───────────────────────────────────────────────────────────
 
     /**
@@ -1231,6 +1465,9 @@ class Table
      */
     public function paginate(int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
+        // Resolve page from GET if available
+        $page = (int) ($_GET['page'] ?? $page);
+
         $paginator = new Paginator();
         $result    = $paginator->paginate($this->builder(), $perPage, $page, $withCount);
 

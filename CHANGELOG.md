@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2026-10-24
+
+### Added
+- Added the minimal `Authenticator::authenticate(Request): ?object` contract for application-defined session, JWT, API-key, and custom identity resolution.
+- Added request-backed `Auth` access through `auth()->user()`, `auth()->id()`, `auth()->check()`, `auth()->guest()`, and `Request::user()`.
+- Added generic authentication middleware and `AuthenticationException` for HTTP 401 enforcement without coupling Core to redirects or user persistence.
+- Added request identity propagation to validated payloads and current-identity integration with policy authorization.
+- Added focused coverage for authenticated and anonymous requests, single resolution, consecutive-request isolation, exception cleanup, identifier resolution, and distinct 401/403 failures.
+- Hardened request identity isolation for nested dispatches and conflicting authenticators, with cross-Fiber interleaving rejected for a shared application instance.
+- Added authentication security regression coverage for request cleanup, resolver provenance, payload identity sharing, and rate-limit client address handling.
+- Added Chunked Processing support to `Table` and `GreenQuery` for processing large datasets with constant O(chunk_size) memory consumption:
+  - `Table::chunk(int $size, callable $callback)` — OFFSET-based batching with hydrated models, eager-loaded includes, aggregations preservation per batch, and early exit when returning `false`.
+  - `Table::chunkById(int $size, callable $callback, ?string $column = null)` — Keyset (cursor) based chunking using `WHERE column > :_chunk_last_id ORDER BY column ASC LIMIT :size` for O(1) batch query performance on large tables.
+  - Added `chunk()` and `chunkById()` methods to `FetchesResults` trait for fluent `GreenQuery` integration (`$table->query()->where(...)->chunk(...)`).
+  - Added `Table::chunkFromBuilder()` and `Table::chunkByIdFromBuilder()` for raw QueryBuilder delegation.
+
+### Changed
+- Breaking: extract JWT services and firebase/php-jwt into optional green-auth-jwt; migrate Security\Jwt imports to AuthJwt and register its provider explicitly.
+- Add explicit authentication context selection to resolve(), synchronizeUser(), and generic Authenticate middleware; synchronization cannot overwrite another context.
+- `Application::handle()` now attaches the active request to Green Auth for the dispatch lifetime and detaches it in a `finally` block, preventing identity leakage in long-running workers.
+- `PolicyMiddleware` now passes the current authenticated identity to `Authorizer` while keeping authentication and authorization separate.
+
+### Security
+- Authentication identities are cached per request, including anonymous results, so repeated reads do not repeat database queries or token validation.
+- Authentication failures return 401 and authorization denials return 403 through the existing HTTP exception pipeline.
+
 ## [3.0.0] - 2026-10-10
 
 ### Added

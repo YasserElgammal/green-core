@@ -49,4 +49,27 @@ trait FetchesResults
 
         return $model;
     }
+
+    /**
+     * Process the query results in fixed-size chunks (OFFSET-based).
+     *
+     * @param  int       $size      Number of rows per chunk
+     * @param  callable  $callback  fn(Model[] $models, int $page): ?bool
+     */
+    public function chunk(int $size, callable $callback): void
+    {
+        $this->table->chunkFromBuilder($this->preparedBuilder(), $size, $callback);
+    }
+
+    /**
+     * Process the query results in chunks using keyset pagination.
+     *
+     * @param  int          $size      Number of rows per chunk
+     * @param  callable     $callback  fn(Model[] $models): ?bool
+     * @param  string|null  $column    Column to paginate on (defaults to primary key)
+     */
+    public function chunkById(int $size, callable $callback, ?string $column = null): void
+    {
+        $this->table->chunkByIdFromBuilder($this->preparedBuilder(), $size, $callback, $column);
+    }
 }

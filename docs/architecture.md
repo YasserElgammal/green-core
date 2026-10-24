@@ -24,11 +24,13 @@
 14. [Session Management](#14-session-management)
 15. [Cache System Architecture](#15-cache-system-architecture)
 16. [Signal Dispatcher](#16-signal-dispatcher)
-17. [Authorization Architecture](#17-authorization-architecture)
-18. [Extensibility & Service Providers](#18-extensibility--service-providers)
-19. [Performance Optimizations](#19-performance-optimizations)
-20. [View System (Twig Integration)](#20-view-system-twig-integration)
-21. [Security Internals (CSRF)](#21-security-internals-csrf)
+17. [Authentication Architecture](#17-authentication-architecture)
+18. [Authorization Architecture](#18-authorization-architecture)
+19. [Extensibility & Service Providers](#19-extensibility--service-providers)
+20. [Performance Optimizations](#20-performance-optimizations)
+21. [View System (Twig Integration)](#21-view-system-twig-integration)
+22. [Security Internals (CSRF)](#22-security-internals-csrf)
+23. [Queue Architecture](#23-queue-architecture)
 
 ---
 
@@ -619,7 +621,7 @@ The query layer is split into traits by responsibility:
 |---|---|
 | [`BuildsConditions`](../src/Database/Query/Traits/BuildsConditions.php) | `where`, `orWhere`, grouped conditions, list/null/range/like helpers. |
 | [`OrdersQuery`](../src/Database/Query/Traits/OrdersQuery.php) | `orderBy`, `latest`, `oldest`, `limit`, `offset`. |
-| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `paginate`, `first`, `firstRequired`. |
+| [`FetchesResults`](../src/Database/Query/Traits/FetchesResults.php) | `fetch`, `paginate`, `first`, `firstRequired`, `chunk`, `chunkById`. |
 | [`RunsAggregates`](../src/Database/Query/Traits/RunsAggregates.php) | `count`, `exists`, `sum`, `avg`, `min`, `max`. |
 
 Column identifiers are validated before being interpolated into SQL, while values are bound as DBAL parameters. Query result methods delegate back to `Table::fetchFromBuilder()` or `Table::paginateFromBuilder()`, so pending eager loads, pagination hydration, and model hydration remain centralized in the Table Gateway.
@@ -627,6 +629,38 @@ Column identifiers are validated before being interpolated into SQL, while value
 `GreenQuery::paginate($perPage, $page, $withCount)` paginates the filtered query itself, preserving `where` conditions and ordering. When `$withCount` is `false`, [`Paginator`](../src/Pagination/Paginator.php) skips the `COUNT(*)` query and fetches one extra row internally to determine `has_next`.
 
 See [Database and IQL](database-iql.html) for the user-facing API reference.
+
+### Chunked Processing
+
+For handling large datasets without exhausting server memory, [`Table`](../src/Database/Table.php) and [`GreenQuery`](../src/Database/Query/GreenQuery.php) provide two chunking strategies that keep memory consumption constant at $O(\text{chunk\_size})$:
+
+1. **OFFSET-Based Chunking (`chunk`)**:
+   - Iterates results using `OFFSET` and `LIMIT`.
+   - Re-applies all pending includes and aggregations per batch.
+   - Unsets models and rows explicitly between batches for prompt garbage collection.
+   - Ideal for general batch processing:
+   ```php
+   $userTable->include('posts')->chunk(500, function (array $users, int $page) {
+       foreach ($users as $user) {
+           processUser($user);
+       }
+   });
+   ```
+
+2. **Keyset Cursor-Based Chunking (`chunkById`)**:
+   - Paginates using keyset comparison (`WHERE column > :_chunk_last_id ORDER BY column ASC LIMIT :size`).
+   - Guarantees $O(1)$ batch query performance across large or deep datasets, avoiding the $O(n)$ performance degradation of high `OFFSET` values.
+   - Fully supports eager loading (`include`) per batch:
+   ```php
+   $userTable->query()->where('status', 'active')->chunkById(1000, function (array $users) {
+       foreach ($users as $user) {
+           dispatchSyncJob($user);
+       }
+   });
+   ```
+
+- Returning `false` from the callback in either method halts iteration immediately.
+- Pending state (`pendingIncludes`, `pendingResolved`, `pendingAggregations`) is safely preserved across chunks and cleaned up upon loop completion.
 
 ### Schema Grammars
 
@@ -754,7 +788,71 @@ Signal dispatch is synchronous. The current implementation does not provide attr
 
 ---
 
-## 17. Authorization Architecture
+## 17. Authentication Architecture
+
+Green Auth is request-centered: authentication resolves the identity associated
+with the current HTTP request and does not perform login, logout, persistence,
+token issuance, or authorization.
+
+```text
+Request -> Authenticator -> Current identity -> Controller -> Authorizer
+```
+
+The [`Authenticator`](../src/Auth/Authenticator.php) contract contains one
+method, `authenticate(Request $request): ?object`. Applications bind or compose a
+session, JWT, API-key, or custom implementation without introducing guards or
+user providers. [`Authenticate`](../src/Http/Middleware/Authenticate.php) invokes
+that contract and optionally enforces the presence of an identity by throwing
+`AuthenticationException` with HTTP status 401.
+
+[`Auth`](../src/Auth/Auth.php) is a lightweight facade over the active
+[`Request`](../src/Http/Request.php). The request is the single identity store:
+
+- `auth()->user()` and `$request->user()` return the identical object.
+- `auth()->id()` uses `Model::getPrimaryKeyValue()` or a conventional
+  integer/string `id` property.
+- `auth()->check()` and `auth()->guest()` expose authenticated/anonymous state.
+- A resolved flag caches both identities and anonymous `null` results, preventing
+  repeated persistence queries or token validation.
+- The request records the authenticator class and optional explicit context.
+  `resolve($request, $authenticator, 'admin')` distinguishes two contexts using
+  the same implementation. Resolving the same request with a different context
+  or class fails with HTTP 401, including when the
+  first result was anonymous. Manually assigned identities do not satisfy an
+  authentication middleware until its authenticator has resolved them.
+
+At the start of `Application::handle()`, the `Auth` facade is attached to the
+incoming request. The reference is released in a `finally` block after response
+and exception handling, so consecutive requests in a long-running process cannot
+inherit one another's identity. Nested dispatch restores the outer request and
+identity. Payload objects share the source request's identity state so login or
+logout changes remain visible through an already-created payload.
+
+One `Application` instance supports sequential requests and synchronous nested
+dispatch. Interleaved dispatch from separate PHP Fibers is rejected: the
+container and application helpers are not Fiber-scoped. Concurrent workers
+must use an independent `Application` instance for each execution context.
+
+Authentication mechanisms are adapters. The skeleton defaults to its application
+`SessionAuthenticator`; optional package `yasser-elgammal/green-auth-jwt` supplies
+JWT cryptography and a JWT authenticator. Core has no JWT/OAuth dependency.
+Green Key and OAuth2 resource servers can implement `Authenticator` directly and
+compose `new Authenticate($adapter, context: 'integration')`. Select exactly one
+adapter/context per route; no implicit credential fallback is performed.
+`synchronizeUser($identity, Adapter::class, 'integration')` updates that same
+context and rejects replacing another resolved context.
+
+Breaking migration: `YasserElgammal\Green\Security\Jwt\JwtConfig` and `JwtService`
+move to `YasserElgammal\Green\AuthJwt` in the optional package. Update imports,
+install the package, bind its `IdentityResolverInterface` to an application
+resolver, and register its `JwtServiceProvider` explicitly. Existing Core 3.0
+constraints are not proof of compatibility with the extracted API: coordinate a
+breaking Core release and adapter dependency constraints before publication.
+No published version has been assumed by this working-tree migration.
+
+---
+
+## 18. Authorization Architecture
 
 Authorization is structured around explicit questions and policies, avoiding implicit magic.
 
@@ -778,7 +876,7 @@ public function edit(Request $request, int $id)
 ```
 The first argument is the ability name. The second argument is the route parameter name or subject string passed to the Authorizer.
 
-If the policy fails, the framework throws a `ForbiddenException` before the controller method executes. The current router integration calls `authorizer()->authorize($ability, $subject)` without an actor, so policies that need the current user should resolve it from the application's auth/session layer until a dedicated actor resolver is added.
+If the policy fails, the framework throws a `ForbiddenException` with HTTP status 403 before the controller method executes. `PolicyMiddleware` passes `auth()->user()` as the actor, keeping identity resolution in Green Auth while policy decisions remain in `Authorizer`.
 
 Authorization can also be checked explicitly inside controllers:
 
@@ -788,7 +886,7 @@ authorizer()->authorize('update', $post, $user);
 
 ---
 
-## 18. Extensibility & Service Providers
+## 19. Extensibility & Service Providers
 
 Extensibility in Green is managed primarily through **Service Providers**.
 
@@ -828,7 +926,7 @@ This architecture ensures a clean, predictable bootstrapping phase. Domain manag
 
 ---
 
-## 19. Performance Optimizations
+## 20. Performance Optimizations
 
 Green keeps request startup predictable by loading configuration once, registering providers in a fixed order, and resolving shared services lazily from the application container. Singleton bindings prevent repeated construction of managers and infrastructure clients during one application lifecycle.
 
@@ -841,7 +939,7 @@ Route matching can also use a compiled dispatcher cache. These caches contain de
 
 ---
 
-## 20. View System (Twig Integration)
+## 21. View System (Twig Integration)
 
 [`View`](../src/View/View.php) provides the static application-facing entry point, while [`ViewRenderer`](../src/View/ViewRenderer.php) owns the Twig environment. The view service provider configures template paths, cache behavior, debugging, and automatic reload from the typed view configuration.
 
@@ -855,7 +953,7 @@ The function delegates to the same [`UrlGenerator`](../src/Routing/UrlGenerator.
 
 ---
 
-## 21. Security Internals (CSRF)
+## 22. Security Internals (CSRF)
 
 Green uses a session-backed double-token pair for CSRF protection. Templates generate the hidden fields through `csrf_field()`, and [`CsrfMiddleware`](../src/Http/Middleware/CsrfMiddleware.php) validates unsafe requests before they reach controllers.
 
@@ -886,7 +984,7 @@ csrf_field() → CsrfTokenManager     CsrfMiddleware
 
 ---
 
-## 22. Queue Architecture
+## 23. Queue Architecture
 
 The Queue subsystem follows Green's philosophy of explicit dependency injection and clear domain managers, rejecting implicit global state and excessive magic (e.g., no Facades, no `ShouldQueue` markers).
 

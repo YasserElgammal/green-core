@@ -10,6 +10,7 @@ use YasserElgammal\Green\Routing\RateLimit\ArrayRateLimitStore;
 use YasserElgammal\Green\Routing\RateLimiter;
 use YasserElgammal\Green\Routing\Route;
 use YasserElgammal\Green\Routing\Router;
+use YasserElgammal\Green\Session\SessionManager;
 
 class RateLimiterTest extends TestCase
 {
@@ -55,6 +56,26 @@ class RateLimiterTest extends TestCase
 
         $this->assertNotSame($limiter->key($guest), $limiter->key($user));
         $this->assertNotSame($limiter->key($guest, 'login'), $limiter->key($guest, 'api'));
+    }
+
+    public function testGuestRateLimitKeyDoesNotStartASession(): void
+    {
+        $request = new class(server: ['REMOTE_ADDR' => '10.0.0.2']) extends Request {
+            public function session(): SessionManager
+            {
+                throw new \RuntimeException('Session must not be accessed.');
+            }
+        };
+
+        $this->assertSame('ip:10.0.0.2', $this->limiter()->key($request));
+    }
+
+    public function testForwardedIpHeaderCannotBypassGuestLimit(): void
+    {
+        $request = $this->request();
+        $request->server['HTTP_X_FORWARDED_FOR'] = '203.0.113.5';
+
+        $this->assertSame('ip:10.0.0.1', $this->limiter()->key($request));
     }
 
     public function testRouteMiddlewareWorksWithThrottleAlias(): void

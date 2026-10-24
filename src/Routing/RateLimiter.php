@@ -16,7 +16,10 @@ class RateLimiter
     public function key(Request $request, ?string $prefix = null): string
     {
         $userId = $this->userId($request);
-        $identity = $userId !== null ? 'user:' . $userId : 'ip:' . $request->ip();
+        // Authorization-independent limits must use a server-controlled address.
+        $identity = $userId !== null
+            ? 'user:' . $userId
+            : 'ip:' . ($request->server['REMOTE_ADDR'] ?? '127.0.0.1');
 
         return $prefix !== null && $prefix !== '' ? $prefix . ':' . $identity : $identity;
     }
@@ -87,6 +90,6 @@ class RateLimiter
             }
         }
 
-        return $request->getAttribute('user_id') ?? $request->session()->get('user_id');
+        return $request->getAttribute('user_id');
     }
 }
