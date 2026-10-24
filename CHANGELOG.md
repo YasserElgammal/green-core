@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.0.0] - 2026-10-24
 
 ### Added
 - Added the minimal `Authenticator::authenticate(Request): ?object` contract for application-defined session, JWT, API-key, and custom identity resolution.
