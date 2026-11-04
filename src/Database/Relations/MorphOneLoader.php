@@ -41,7 +41,7 @@ class MorphOneLoader implements RelationLoader
         $parentIds = array_values(
             array_unique(
                 array_filter(
-                    array_map(fn(Model $m) => $m->get($localKey), $models),
+                    array_map(fn(Model $m) => $m->getRaw($localKey), $models),
                     fn($id) => $id !== null
                 )
             )
@@ -70,12 +70,12 @@ class MorphOneLoader implements RelationLoader
         $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Hydrate related rows into Model instances ────────────────────────
-        $related = array_map(fn($row) => (clone $relatedBlueprint)->fill($row), $rows);
+        $related = array_map(fn($row) => (clone $relatedBlueprint)->fillRaw($row)->syncOriginal(), $rows);
 
         // ── Group related models by parent ID (keeping only the first) ───────
         $mapped = [];
         foreach ($related as $relatedModel) {
-            $parentId = $relatedModel->get($idColumn);
+            $parentId = $relatedModel->getRaw($idColumn);
             if (!isset($mapped[$parentId])) {
                 $mapped[$parentId] = $relatedModel;
             }
@@ -83,7 +83,7 @@ class MorphOneLoader implements RelationLoader
 
         // ── Attach mapped result to parent models ────────────────────────────
         foreach ($models as $model) {
-            $id              = $model->get($localKey);
+            $id              = $model->getRaw($localKey);
             $model->setRelation($relation, $mapped[$id] ?? null);
         }
 

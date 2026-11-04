@@ -42,8 +42,8 @@ class MorphToLoader implements RelationLoader
         $typeMap = [];
 
         foreach ($models as $model) {
-            $type = $model->get($typeColumn);
-            $id   = $model->get($idColumn);
+            $type = $model->getRaw($typeColumn);
+            $id   = $model->getRaw($idColumn);
 
             if ($type !== null && $id !== null) {
                 $typeMap[$type][$id] = true;
@@ -84,15 +84,15 @@ class MorphToLoader implements RelationLoader
 
             // Index by the related model's primary key
             foreach ($rows as $row) {
-                $relatedModel = (clone $relatedBlueprint)->fill($row);
+                $relatedModel = (clone $relatedBlueprint)->fillRaw($row)->syncOriginal();
                 $resultsByType[$typeAlias][$row[$relatedPk]] = $relatedModel;
             }
         }
 
         // ── Attach the matching model to each parent ─────────────────────────
         foreach ($models as $model) {
-            $type = $model->get($typeColumn);
-            $id   = $model->get($idColumn);
+            $type = $model->getRaw($typeColumn);
+            $id   = $model->getRaw($idColumn);
 
             if ($type !== null && $id !== null) {
                 $model->setRelation($relation, $resultsByType[$type][$id] ?? null);

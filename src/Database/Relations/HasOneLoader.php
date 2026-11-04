@@ -33,7 +33,7 @@ class HasOneLoader implements RelationLoader
         $parentIds = array_values(
             array_unique(
                 array_filter(
-                    array_map(fn(Model $m) => $m->get($localKey), $models),
+                    array_map(fn(Model $m) => $m->getRaw($localKey), $models),
                     fn($id) => $id !== null
                 )
             )
@@ -65,13 +65,13 @@ class HasOneLoader implements RelationLoader
         foreach ($rows as $row) {
             $parentId = $row[$foreignKey];
             if (!isset($indexed[$parentId])) {
-                $indexed[$parentId] = (clone $relatedBlueprint)->fill($row);
+                $indexed[$parentId] = (clone $relatedBlueprint)->fillRaw($row)->syncOriginal();
             }
         }
 
         // ── Attach single model (or null) to each parent ─────────────────────
         foreach ($models as $model) {
-            $id              = $model->get($localKey);
+            $id              = $model->getRaw($localKey);
             $model->setRelation($relation, $indexed[$id] ?? null);
         }
 

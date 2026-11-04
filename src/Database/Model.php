@@ -55,6 +55,12 @@ abstract class Model implements \JsonSerializable
         return $method === null ? ($this->attributes[$key] ?? $default) : $this->$method($this->attributes[$key]);
     }
 
+    /** Read stored state for persistence and relation matching, bypassing getters. */
+    public function getRaw(string $key, mixed $default = null): mixed
+    {
+        return $this->attributes[$key] ?? $default;
+    }
+
     public function __get(string $key): mixed
     {
         return $this->get($key);

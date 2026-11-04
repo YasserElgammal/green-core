@@ -44,7 +44,7 @@ class MorphManyLoader implements RelationLoader
         $parentIds = array_values(
             array_unique(
                 array_filter(
-                    array_map(fn(Model $m) => $m->get($localKey), $models),
+                    array_map(fn(Model $m) => $m->getRaw($localKey), $models),
                     fn($id) => $id !== null
                 )
             )
@@ -74,18 +74,18 @@ class MorphManyLoader implements RelationLoader
         $rows = $qb->executeQuery()->fetchAllAssociative();
 
         // ── Hydrate related rows into Model instances ────────────────────────
-        $related = array_map(fn($row) => (clone $relatedBlueprint)->fill($row), $rows);
+        $related = array_map(fn($row) => (clone $relatedBlueprint)->fillRaw($row)->syncOriginal(), $rows);
 
         // ── Group related models by parent ID ────────────────────────────────
         $grouped = [];
         foreach ($related as $relatedModel) {
-            $parentId = $relatedModel->get($idColumn);
+            $parentId = $relatedModel->getRaw($idColumn);
             $grouped[$parentId][] = $relatedModel;
         }
 
         // ── Attach grouped results to parent models ──────────────────────────
         foreach ($models as $model) {
-            $id              = $model->get($localKey);
+            $id              = $model->getRaw($localKey);
             $model->setRelation($relation, $grouped[$id] ?? []);
         }
 

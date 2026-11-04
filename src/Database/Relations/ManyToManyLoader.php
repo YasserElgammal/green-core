@@ -38,7 +38,7 @@ class ManyToManyLoader implements RelationLoader
         $parentIds = array_values(
             array_unique(
                 array_filter(
-                    array_map(fn(Model $m) => $m->get($localKey), $models),
+                    array_map(fn(Model $m) => $m->getRaw($localKey), $models),
                     fn($id) => $id !== null
                 )
             )
@@ -80,13 +80,13 @@ class ManyToManyLoader implements RelationLoader
             $pivotLocalId = $row['__pivot_local_id'];
             unset($row['__pivot_local_id']);
 
-            $relatedModel = (clone $relatedBlueprint)->fill($row);
+            $relatedModel = (clone $relatedBlueprint)->fillRaw($row)->syncOriginal();
             $grouped[$pivotLocalId][] = $relatedModel;
         }
 
         // ── Attach grouped results to parent models ──────────────────────────
         foreach ($models as $model) {
-            $id              = $model->get($localKey);
+            $id              = $model->getRaw($localKey);
             $model->setRelation($relation, $grouped[$id] ?? []);
         }
 

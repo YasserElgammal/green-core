@@ -34,7 +34,7 @@ class BelongsToLoader implements RelationLoader
         $foreignIds = array_values(
             array_unique(
                 array_filter(
-                    array_map(fn(Model $m) => $m->get($foreignKey), $models),
+                    array_map(fn(Model $m) => $m->getRaw($foreignKey), $models),
                     fn($id) => $id !== null
                 )
             )
@@ -64,13 +64,13 @@ class BelongsToLoader implements RelationLoader
         // ── Index related models by their owner key ──────────────────────────
         $indexed = [];
         foreach ($rows as $row) {
-            $relatedModel                  = (clone $relatedBlueprint)->fill($row);
+            $relatedModel                  = (clone $relatedBlueprint)->fillRaw($row)->syncOriginal();
             $indexed[$row[$ownerKey]]      = $relatedModel;
         }
 
         // ── Attach the matching parent model (single object, not array) ──────
         foreach ($models as $model) {
-            $fkValue         = $model->get($foreignKey);
+            $fkValue         = $model->getRaw($foreignKey);
             $model->setRelation($relation, $indexed[$fkValue] ?? null);
         }
 
