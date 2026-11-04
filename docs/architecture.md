@@ -1028,6 +1028,62 @@ class UserController
         $this->queue->dispatch(new SendWelcomeEmail($user));
     }
 }
+
+---
+
+## 21. Mail Subsystem Architecture
+
+The `Mail` subsystem provides an expressive, fluent interface for sending emails with native Twig template rendering, backed by Symfony Mailer.
+
+### Architecture
+
+```
+mailer() / Mailer (injectable service)
+  └── PendingMail (fluent builder)
+        ├── view('template', data) → Twig via View::render()
+        ├── to() / cc() / bcc() / replyTo()
+        ├── subject() / html() / text()
+        └── attach() / attachData()
+  └── Transport (SMTP via DSN, or ArrayTransport for testing)
+```
+
+| Component | Role |
+|---|---|
+| [`MailerInterface`](../src/Mail/MailerInterface.php) | Primary mailer contract: `to`, `from`, `view`, `send`, `raw`, `fake`. |
+| [`Mailer`](../src/Mail/Mailer.php) | Central service registered as a singleton. Manages Symfony Mailer instance, default SMTP transport from `MailConfig`, and in-memory test transport. |
+| [`PendingMail`](../src/Mail/PendingMail.php) | Fluent builder for composing recipients, subjects, Twig views (`view()`), text alternatives (`textView()`), attachments, and Symfony Email hooks (`with()`). |
+| [`ArrayTransport`](../src/Mail/Transports/ArrayTransport.php) | In-memory transport for testing that records sent messages and offers assertions (`hasSentTo`, `emails`, `count`). |
+| [`MailServiceProvider`](../src/Providers/MailServiceProvider.php) | Binds `Mailer` and `MailerInterface` to the application container. |
+| `mailer()` | Global helper function resolving `Mailer` or returning a `PendingMail` when passed a recipient. |
+
+### Sending an Email with Twig Template
+
+```php
+// Using the mailer() helper:
+mailer('user@example.com', 'Jane Doe')
+    ->subject('Welcome to Green Framework')
+    ->view('emails/welcome', ['user' => $user])
+    ->send();
+
+// Or starting fluently from view:
+mailer()
+    ->to('user@example.com')
+    ->subject('Password Reset')
+    ->view('emails/reset-password', ['token' => $token])
+    ->textView('emails/reset-password-text', ['token' => $token])
+    ->send();
+```
+
+### Testing Emails
+
+```php
+$fake = mailer()->fake();
+
+// Execute action that sends mail...
+
+$this->assertCount(1, $fake);
+$this->assertTrue($fake->hasSentTo('user@example.com'));
+```
 ```
 
 

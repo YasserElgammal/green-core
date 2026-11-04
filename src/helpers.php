@@ -26,6 +26,8 @@ use YasserElgammal\Green\Signal\SignalDispatcher;
 use YasserElgammal\Green\Auth\Authorizer;
 use YasserElgammal\Green\Auth\Auth;
 use YasserElgammal\Green\Cache\CacheManager;
+use YasserElgammal\Green\Mail\Mailer;
+use YasserElgammal\Green\Mail\PendingMail;
 
 $GLOBALS['__green_started_at'] ??= $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
 
@@ -349,5 +351,38 @@ if (!function_exists('route')) {
 
         $generator = new \YasserElgammal\Green\Routing\UrlGenerator($router, $request);
         return $generator->route($name, $parameters);
+    }
+}
+
+// ─── Phase 3: Mailer ─────────────────────────────────────────────────────────
+
+if (!function_exists('mailer_set_instance')) {
+    /** @deprecated Bind Mailer through the application container instead. */
+    function mailer_set_instance(Mailer $instance): void
+    {
+        app()->instance(Mailer::class, $instance);
+    }
+}
+
+if (!function_exists('mailer')) {
+    /**
+     * Get the Mailer instance or create a pending mail for a recipient.
+     *
+     * @param string|array<int|string, string|\Symfony\Component\Mime\Address>|\Symfony\Component\Mime\Address|null $to
+     * @param string|null $name
+     * @return Mailer|PendingMail
+     */
+    function mailer(
+        string|array|\Symfony\Component\Mime\Address|null $to = null,
+        ?string $name = null
+    ): Mailer|PendingMail {
+        /** @var Mailer $mailer */
+        $mailer = app(Mailer::class);
+
+        if ($to !== null) {
+            return $mailer->to($to, $name);
+        }
+
+        return $mailer;
     }
 }

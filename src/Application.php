@@ -30,6 +30,7 @@ use YasserElgammal\Green\Providers\{
     DatabaseServiceProvider,
     CacheServiceProvider,
     QueueServiceProvider,
+    MailServiceProvider,
 };
 
 class Application extends Container
@@ -96,6 +97,7 @@ class Application extends Container
             DatabaseServiceProvider::class,
             CacheServiceProvider::class,
             QueueServiceProvider::class,
+            MailServiceProvider::class,
         ];
 
         foreach ($providers as $provider) {
