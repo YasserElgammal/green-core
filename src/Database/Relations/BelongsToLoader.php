@@ -71,7 +71,7 @@ class BelongsToLoader implements RelationLoader
         // ── Attach the matching parent model (single object, not array) ──────
         foreach ($models as $model) {
             $fkValue         = $model->get($foreignKey);
-            $model->$relation = $indexed[$fkValue] ?? null;
+            $model->setRelation($relation, $indexed[$fkValue] ?? null);
         }
 
         return $models;
@@ -80,7 +80,7 @@ class BelongsToLoader implements RelationLoader
     private function attachNull(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->$relation = null;
+            $model->setRelation($relation, null);
         }
         return $models;
     }

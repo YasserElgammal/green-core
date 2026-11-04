@@ -1029,3 +1029,54 @@ class UserController
     }
 }
 ```
+
+
+### Model attribute getters and setters
+
+Models remain DTOs; Table / GreenQuery own all persistence. Define protected,
+non-static methods accepting one stored/incoming value:
+
+```php
+protected function setEmail(?string $value): ?string
+{
+    return $value === null ? null : strtolower(trim($value));
+}
+
+protected function getFullName(?string $value): ?string
+{
+    return $value === null ? null : ucwords($value);
+}
+```
+
+`first_name` resolves to `getFirstName` / `setFirstName`. Resolution (including
+missing hooks) is cached per concrete model class and attribute; inherited
+protected hooks work. Public/private/static methods and framework metadata
+methods are not hooks. No Attribute object or service resolution is involved.
+
+Setters run on construction, `fill()`, `set()`, and property assignment before
+raw state is stored and compared for dirtiness. Getters run on existing
+attributes through `get()`, property reads, `toArray()`, and JSON serialization.
+They do not run for missing attributes or create computed output keys. Null is
+passed to hooks, so declare nullable parameters when null is supported.
+Without hooks, existing null/default and missing-attribute behavior remains.
+`isset()` continues to check raw presence. Hooks must be pure transformations:
+they must not query, load relations, persist, perform I/O, or mutate model state.
+The framework adds no such side effects; application hook bodies remain the
+application author's responsibility.
+
+Database hydration uses `fillRaw()` and `syncOriginal()` to preserve persisted
+values exactly and bypass setters. Explicit application assignments still use
+setters. `getOriginal()`, dirty tracking, primary-key lookup, and `toRawArray()`
+use stored values without getters. Table inserts use `toRawArray()`; updates use
+raw dirty values. Generated database primary keys bypass setters as well.
+Consequently, formatting a value for output cannot change persistence state.
+`fillRaw()` merges values without resetting the original snapshot; use
+`syncOriginal()` explicitly when establishing a baseline.
+
+Relation loaders attach already fetched values with `setRelation()` in the
+existing attribute storage. Loaded relations take precedence over hooks,
+including null and empty arrays, and serialize recursively as before. Custom
+relation loaders should use this method too. Reading attributes never initiates
+relation loading. No migration is required for models without hooks; existing
+protected single-argument get/set methods matching attribute names now opt into
+this convention and should be reviewed when adopting the feature.

@@ -72,7 +72,7 @@ class HasOneLoader implements RelationLoader
         // ── Attach single model (or null) to each parent ─────────────────────
         foreach ($models as $model) {
             $id              = $model->get($localKey);
-            $model->$relation = $indexed[$id] ?? null;
+            $model->setRelation($relation, $indexed[$id] ?? null);
         }
 
         return $models;
@@ -81,7 +81,7 @@ class HasOneLoader implements RelationLoader
     private function attachNull(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->$relation = null;
+            $model->setRelation($relation, null);
         }
         return $models;
     }

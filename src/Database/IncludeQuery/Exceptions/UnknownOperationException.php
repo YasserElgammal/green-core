@@ -12,8 +12,8 @@ namespace YasserElgammal\Green\Database\IncludeQuery\Exceptions;
 class UnknownOperationException extends IncludeQueryException
 {
     public function __construct(
-        private readonly string $operationName,
-        private readonly string $relation,
+        public readonly string $operationName,
+        public readonly string $relation,
         array $availableOperations = [],
     ) {
         $available = !empty($availableOperations)
@@ -25,13 +25,6 @@ class UnknownOperationException extends IncludeQueryException
         );
     }
 
-    public function getOperationName(): string
-    {
-        return $this->operationName;
-    }
-
-    public function getRelation(): string
-    {
-        return $this->relation;
-    }
+    public function getOperationName(): string { return $this->operationName; }
+    public function getRelation(): string      { return $this->relation; }
 }

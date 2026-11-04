@@ -14,11 +14,11 @@ class SyntaxException extends IncludeQueryException
 {
     public function __construct(
         string $message,
-        private readonly int $position = 0,
-        private readonly string $source = '',
+        public readonly int $position = 0,
+        public readonly string $source = '',
     ) {
         $positionHint = $position > 0 ? " at position {$position}" : '';
-        $sourceHint   = $source !== '' ? " in \"{$source}\"" : '';
+        $sourceHint = $source !== '' ? " in \"{$source}\"" : '';
 
         parent::__construct("Include query syntax error{$positionHint}{$sourceHint}: {$message}");
     }

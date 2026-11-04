@@ -95,9 +95,9 @@ class MorphToLoader implements RelationLoader
             $id   = $model->get($idColumn);
 
             if ($type !== null && $id !== null) {
-                $model->$relation = $resultsByType[$type][$id] ?? null;
+                $model->setRelation($relation, $resultsByType[$type][$id] ?? null);
             } else {
-                $model->$relation = null;
+                $model->setRelation($relation, null);
             }
         }
 
@@ -107,7 +107,7 @@ class MorphToLoader implements RelationLoader
     private function attachNull(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->$relation = null;
+            $model->setRelation($relation, null);
         }
         return $models;
     }

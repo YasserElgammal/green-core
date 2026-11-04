@@ -770,7 +770,7 @@ class Table
 
     private function hydrate(array $rows): array
     {
-        return array_map(fn($row) => (clone $this->blueprint)->fill($row)->syncOriginal(), $rows);
+        return array_map(fn($row) => (clone $this->blueprint)->fillRaw($row)->syncOriginal(), $rows);
     }
 
     /**
@@ -1074,8 +1074,8 @@ class Table
             return $model;
         }
 
-        $this->connection->insert($this->table, $model->toArray());
-        $model->set($this->primaryKey, (int) $this->connection->lastInsertId());
+        $this->connection->insert($this->table, $model->toRawArray());
+        $model->fillRaw([$this->primaryKey => (int) $this->connection->lastInsertId()]);
         $model->syncOriginal();
 
         // ── After hooks ──────────────────────────────────────────────────
@@ -1117,7 +1117,7 @@ class Table
 
             if ($this->timestamps) {
                 $data['updated_at'] = date('Y-m-d H:i:s');
-                $model->set('updated_at', $data['updated_at']);
+                $model->fillRaw(['updated_at' => $data['updated_at']]);
             }
 
             unset($data[$pk]);
@@ -1140,16 +1140,16 @@ class Table
                 return $model;
             }
 
-            $data = $model->toArray();
+            $data = $model->toRawArray();
 
             if ($this->timestamps) {
                 $now = date('Y-m-d H:i:s');
                 $data['created_at'] ??= $now;
-                $model->set('created_at', $data['created_at']);
+                $model->fillRaw(['created_at' => $data['created_at']]);
             }
 
             $this->connection->insert($this->table, $data);
-            $model->set($pk, (int) $this->connection->lastInsertId());
+            $model->fillRaw([$pk => (int) $this->connection->lastInsertId()]);
             $model->syncOriginal();
 
             // ── After hooks (insert path) ────────────────────────────────

@@ -15,8 +15,8 @@ namespace YasserElgammal\Green\Database\IncludeQuery\Exceptions;
 class InvalidAggregationException extends IncludeQueryException
 {
     public function __construct(
-        private readonly string $aggregationName,
-        private readonly string $relation,
+        public readonly string $aggregationName,
+        public readonly string $relation,
         string $reason = '',
     ) {
         $hint = $reason !== '' ? " {$reason}" : '';
@@ -30,7 +30,6 @@ class InvalidAggregationException extends IncludeQueryException
     {
         return $this->aggregationName;
     }
-
     public function getRelation(): string
     {
         return $this->relation;

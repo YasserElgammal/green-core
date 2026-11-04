@@ -11,8 +11,8 @@ namespace YasserElgammal\Green\Database\IncludeQuery\Exceptions;
 class UnknownRelationException extends IncludeQueryException
 {
     public function __construct(
-        private readonly string $relationName,
-        private readonly string $tableClass,
+        public readonly string $relationName,
+        public readonly string $tableClass,
         array $availableRelations = [],
     ) {
         $available = !empty($availableRelations)
@@ -24,13 +24,6 @@ class UnknownRelationException extends IncludeQueryException
         );
     }
 
-    public function getRelationName(): string
-    {
-        return $this->relationName;
-    }
-
-    public function getTableClass(): string
-    {
-        return $this->tableClass;
-    }
+    public function getRelationName(): string { return $this->relationName; }
+    public function getTableClass(): string   { return $this->tableClass; }
 }

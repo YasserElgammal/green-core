@@ -84,7 +84,7 @@ class MorphOneLoader implements RelationLoader
         // ── Attach mapped result to parent models ────────────────────────────
         foreach ($models as $model) {
             $id              = $model->get($localKey);
-            $model->$relation = $mapped[$id] ?? null;
+            $model->setRelation($relation, $mapped[$id] ?? null);
         }
 
         return $models;
@@ -93,7 +93,7 @@ class MorphOneLoader implements RelationLoader
     private function attachNull(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->$relation = null;
+            $model->setRelation($relation, null);
         }
         return $models;
     }

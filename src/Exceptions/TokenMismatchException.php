@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace YasserElgammal\Green\Exceptions;
 
 class TokenMismatchException extends \RuntimeException
 {
-    protected int $statusCode;
+    public readonly int $statusCode;
 
     public function __construct(
         string $message = 'CSRF token mismatch.',

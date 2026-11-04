@@ -87,7 +87,7 @@ class ManyToManyLoader implements RelationLoader
         // ── Attach grouped results to parent models ──────────────────────────
         foreach ($models as $model) {
             $id              = $model->get($localKey);
-            $model->$relation = $grouped[$id] ?? [];
+            $model->setRelation($relation, $grouped[$id] ?? []);
         }
 
         return $models;
@@ -96,7 +96,7 @@ class ManyToManyLoader implements RelationLoader
     private function attachEmpty(array $models, string $relation): array
     {
         foreach ($models as $model) {
-            $model->$relation = [];
+            $model->setRelation($relation, []);
         }
         return $models;
     }

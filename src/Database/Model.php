@@ -17,6 +17,10 @@ abstract class Model implements \JsonSerializable
 
     private array $attributes = [];
 
+    private static array $attributeMethods = [];
+
+    private array $loadedRelations = [];
+
     /** Snapshot of attributes at hydration time — used for dirty tracking */
     private array $original = [];
 
@@ -29,29 +33,71 @@ abstract class Model implements \JsonSerializable
 
     public function fill(array $attributes): static
     {
-        $this->attributes = array_merge($this->attributes, $attributes);
+        foreach ($attributes as $key => $value) {
+            $this->set($key, $value);
+        }
         return $this;
     }
 
     public function set(string $key, mixed $value): static
     {
-        $this->attributes[$key] = $value;
+        $method = isset($this->loadedRelations[$key]) ? null : $this->attributeMethod('set', $key);
+        $this->attributes[$key] = $method === null ? $value : $this->$method($value);
         return $this;
     }
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return $this->attributes[$key] ?? $default;
+        if (!array_key_exists($key, $this->attributes)) {
+            return $default;
+        }
+        $method = isset($this->loadedRelations[$key]) ? null : $this->attributeMethod('get', $key);
+        return $method === null ? ($this->attributes[$key] ?? $default) : $this->$method($this->attributes[$key]);
     }
 
     public function __get(string $key): mixed
     {
-        return $this->attributes[$key] ?? null;
+        return $this->get($key);
     }
 
     public function __set(string $key, mixed $value): void
     {
+        $this->set($key, $value);
+    }
+
+    /** Merge persisted values without application-side setters. */
+    public function fillRaw(array $attributes): static
+    {
+        $this->attributes = array_merge($this->attributes, $attributes);
+        return $this;
+    }
+
+    /** Attach an already loaded relation, including null and empty collections. */
+    public function setRelation(string $key, mixed $value): static
+    {
+        $this->loadedRelations[$key] = true;
         $this->attributes[$key] = $value;
+        return $this;
+    }
+
+    /** Resolve only protected, non-static, single-value hooks outside Model. */
+    private function attributeMethod(string $prefix, string $key): ?string
+    {
+        if (str_starts_with($key, '_')) {
+            return null;
+        }
+        $class = static::class;
+        $cacheKey = $prefix . ':' . $key;
+        if (!array_key_exists($cacheKey, self::$attributeMethods[$class] ?? [])) {
+            $name = $prefix . str_replace(' ', '', ucwords(str_replace('_', ' ', $key)));
+            $method = method_exists($class, $name) ? new \ReflectionMethod($class, $name) : null;
+            self::$attributeMethods[$class][$cacheKey] = $method !== null
+                && $method->getDeclaringClass()->getName() !== self::class
+                && $method->isProtected() && !$method->isStatic()
+                && $method->getNumberOfParameters() === 1
+                ? $method->getName() : null;
+        }
+        return self::$attributeMethods[$class][$cacheKey];
     }
 
     public function __isset(string $key): bool
@@ -126,13 +172,22 @@ abstract class Model implements \JsonSerializable
      */
     public function toArray(): array
     {
-        return $this->resolveAttributes($this->attributes);
+        $attributes = $this->attributes;
+        foreach ($attributes as $key => $value) {
+            if (!str_starts_with($key, '_')) {
+                $attributes[$key] = $this->get($key);
+            }
+        }
+        return $this->resolveAttributes($attributes);
     }
 
-    /**
-     * Implement JsonSerializable so json_encode($model) just works,
-     * including deeply nested relations.
-     */
+    /** Export stored values without getters, excluding internal metadata. */
+    public function toRawArray(): array
+    {
+        return $this->resolveAttributes($this->attributes, false);
+    }
+
+    /** Serialize the same getter-aware output as toArray(). */
     public function jsonSerialize(): array
     {
         return $this->toArray();
@@ -166,7 +221,7 @@ abstract class Model implements \JsonSerializable
      * Recursively resolve attributes, turning nested Model instances
      * and arrays of Model instances into plain arrays.
      */
-    private function resolveAttributes(array $attributes): array
+    private function resolveAttributes(array $attributes, bool $getters = true): array
     {
         $resolved = [];
 
@@ -178,11 +233,11 @@ abstract class Model implements \JsonSerializable
 
             $resolved[$key] = match (true) {
                 // Single nested model
-                $value instanceof self  => $value->toArray(),
+                $value instanceof self  => $getters ? $value->toArray() : $value->toRawArray(),
 
                 // Array — may contain Model instances or scalars
                 is_array($value)        => array_map(
-                    fn($item) => $item instanceof self ? $item->toArray() : $item,
+                    fn($item) => $item instanceof self ? ($getters ? $item->toArray() : $item->toRawArray()) : $item,
                     $value
                 ),
 

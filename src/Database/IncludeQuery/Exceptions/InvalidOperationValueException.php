@@ -12,8 +12,8 @@ namespace YasserElgammal\Green\Database\IncludeQuery\Exceptions;
 class InvalidOperationValueException extends IncludeQueryException
 {
     public function __construct(
-        private readonly string $operationName,
-        private readonly string $rawValue,
+        public readonly string $operationName,
+        public readonly string $rawValue,
         string $reason = '',
     ) {
         $hint = $reason !== '' ? " {$reason}" : '';
@@ -23,13 +23,6 @@ class InvalidOperationValueException extends IncludeQueryException
         );
     }
 
-    public function getOperationName(): string
-    {
-        return $this->operationName;
-    }
-
-    public function getRawValue(): string
-    {
-        return $this->rawValue;
-    }
+    public function getOperationName(): string { return $this->operationName; }
+    public function getRawValue(): string      { return $this->rawValue; }
 }
