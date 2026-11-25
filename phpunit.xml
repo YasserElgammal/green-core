@@ -4,6 +4,9 @@
          bootstrap="vendor/autoload.php"
          cacheDirectory=".phpunit.cache"
          colors="true">
+    <source>
+        <include><directory>src</directory></include>
+    </source>
     <testsuites>
         <testsuite name="Green Core">
             <directory>tests</directory>
