@@ -1136,3 +1136,45 @@ relation loaders should use this method too. Reading attributes never initiates
 relation loading. No migration is required for models without hooks; existing
 protected single-argument get/set methods matching attribute names now opt into
 this convention and should be reviewed when adopting the feature.
+
+
+---
+
+## 24. Scheduling Subsystem Architecture
+
+The `Scheduling` subsystem (`src/Scheduling`) provides explicit, code-first task scheduling without implicit file discovery.
+
+### Architecture
+
+| Component | Role |
+|---|---|
+| [`Schedule`](../src/Scheduling/Schedule.php) | Application-owned singleton registry for registering callbacks (`call()`), console commands (`command()`), and queue jobs (`job()`). |
+| [`ScheduledTask`](../src/Scheduling/ScheduledTask.php) | Fluent task definition holding the 5-field cron expression, timezone, `when()`/`skip()` predicates, and `withoutOverlapping()` lock settings. |
+| [`CronExpression`](../src/Scheduling/CronExpression.php) | Self-contained 5-field cron parser (`minute hour day-of-month month day-of-week`) with `isDue()` and `nextRunDate()`. |
+| [`ScheduleRunner`](../src/Scheduling/ScheduleRunner.php) | Evaluates due tasks for an explicit `DateTimeImmutable`, enforces `MutexInterface`, isolates failures per task, and emits `LifecycleSignals`. |
+| [`MutexInterface`](../src/Scheduling/Contracts/MutexInterface.php) | Narrow lock contract implemented by [`CacheMutex`](../src/Scheduling/Mutex/CacheMutex.php) (best-effort single-host cache lock) and [`InMemoryMutex`](../src/Scheduling/Mutex/InMemoryMutex.php). |
+| [`SchedulingServiceProvider`](../src/Providers/SchedulingServiceProvider.php) | Registers `MutexInterface`, `Schedule`, and `ScheduleRunner` as application singletons. |
+| `schedule:run` / `schedule:list` | Console commands registered in [`Console\Kernel`](../src/Console/Kernel.php) for running due tasks and inspecting the schedule. |
+
+### Registering Scheduled Tasks
+
+Inject `Schedule` in an application service provider's `boot()` method:
+
+```php
+use YasserElgammal\Green\Scheduling\Schedule;
+use YasserElgammal\Green\Support\ServiceProvider;
+
+final class AppScheduleServiceProvider extends ServiceProvider
+{
+    public function boot(): void
+    {
+        $schedule = $this->app->make(Schedule::class);
+
+        $schedule->command('view:clear')
+            ->dailyAt('03:00')
+            ->timezone('Africa/Cairo')
+            ->withoutOverlapping()
+            ->description('Clear compiled Twig templates');
+    }
+}
+```

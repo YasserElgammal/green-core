@@ -26,6 +26,8 @@ use YasserElgammal\Green\Console\Commands\{
     ConfigClearCommand,
     ConfigShowCommand,
     ViewClearCommand,
+    ScheduleRunCommand,
+    ScheduleListCommand,
 };
 
 class Kernel
@@ -56,6 +58,8 @@ class Kernel
         ConfigClearCommand::class,
         ConfigShowCommand::class,
         ViewClearCommand::class,
+        ScheduleRunCommand::class,
+        ScheduleListCommand::class,
     ];
 
     protected \YasserElgammal\Green\Application $app;
