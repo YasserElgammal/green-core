@@ -29,7 +29,7 @@ final class SelectOperation implements OperationInterface
     {
         $columns = explode('|', $value);
 
-        if (empty($columns) || ($columns === [''])) {
+        if ($columns === ['']) {
             throw new InvalidOperationValueException(
                 'select',
                 $value,

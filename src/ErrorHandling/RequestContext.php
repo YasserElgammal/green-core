@@ -42,7 +42,7 @@ final class RequestContext
      */
     public static function capture(): array
     {
-        $server = $_SERVER ?? [];
+        $server = $_SERVER;
         $isCli  = (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server');
 
         return [
