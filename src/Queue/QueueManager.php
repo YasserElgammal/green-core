@@ -79,9 +79,19 @@ final class QueueManager
             throw new RuntimeException('Invalid queue payload format.');
         }
 
-        $job = unserialize($data['data']);
+        if (!is_string($data['class']) || !is_string($data['data']) || !is_subclass_of($data['class'], JobInterface::class)) {
+            throw new RuntimeException('Decoded job does not implement JobInterface.');
+        }
+        $allowedClasses = [
+            $data['class'],
+            \DateTime::class,
+            \DateTimeImmutable::class,
+            \DateTimeZone::class,
+            ...($this->config['allowed_payload_classes'] ?? []),
+        ];
+        $job = unserialize($data['data'], ['allowed_classes' => $allowedClasses]);
         
-        if (!$job instanceof JobInterface) {
+        if (!$job instanceof JobInterface || get_class($job) !== $data['class']) {
             throw new RuntimeException("Decoded job does not implement JobInterface: {$data['class']}");
         }
 
@@ -114,7 +124,7 @@ final class QueueManager
     private function createDatabaseDriver(array $config): QueueDriverInterface
     {
         $connectionName = $config['connection'] ?? null;
-        $connection = Database::getConnection($connectionName)->getNativeConnection();
+        $connection = Database::getConnection($connectionName);
         $table = $config['table'] ?? 'queue_jobs';
 
         return new DatabaseDriver($connection, $table);
@@ -122,6 +132,6 @@ final class QueueManager
 
     private function createSyncDriver(array $config): QueueDriverInterface
     {
-        return new SyncDriver();
+        return new SyncDriver($this);
     }
 }

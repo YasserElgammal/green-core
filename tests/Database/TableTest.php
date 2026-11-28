@@ -385,7 +385,6 @@ class TableTest extends TestCase
         
         $reflection = new \ReflectionClass($table);
         $property = $reflection->getProperty('relations');
-        $property->setAccessible(true);
         $relations = $property->getValue($table);
 
         $this->assertArrayHasKey('posts', $relations);

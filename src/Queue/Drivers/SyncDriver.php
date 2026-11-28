@@ -4,14 +4,16 @@ declare(strict_types=1);
 namespace YasserElgammal\Green\Queue\Drivers;
 
 use YasserElgammal\Green\Queue\Contracts\QueueDriverInterface;
+use YasserElgammal\Green\Queue\QueueManager;
 
 final class SyncDriver implements QueueDriverInterface
 {
+    public function __construct(private readonly ?QueueManager $manager = null) {}
+
     public function push(string $queue, string $payload, int $delay = 0): string|int
     {
         // Decode and execute immediately
-        $data = json_decode($payload, true);
-        $job = unserialize($data['data']);
+        $job = ($this->manager ?? new QueueManager([]))->decode($payload);
         $job->handle();
         
         return uniqid('sync_', true);

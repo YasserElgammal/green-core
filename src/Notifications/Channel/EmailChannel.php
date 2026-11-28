@@ -2,13 +2,12 @@
 
 namespace YasserElgammal\Green\Notifications\Channel;
 
-use YasserElgammal\Green\Notifications\NotificationChannelInterface;
+use YasserElgammal\Green\Config\Typed\MailConfig;
 
-class EmailChannel implements NotificationChannelInterface
+class EmailChannel extends MailChannel
 {
-    public function send(string $recipient, string $message): bool
+    public function __construct(MailConfig $config)
     {
-        error_log("Sending Email to {$recipient}: {$message}");
-        return true;
+        parent::__construct($config);
     }
 }

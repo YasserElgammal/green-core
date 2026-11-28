@@ -17,7 +17,7 @@ class Column
     public bool    $autoIncrement = false;
     public ?int    $length      = null;
 
-    public function __construct(string $name, string $type, ?int $length = null)
+    final public function __construct(string $name, string $type, ?int $length = null)
     {
         $this->name   = $name;
         $this->type   = $type;

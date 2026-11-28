@@ -57,6 +57,16 @@ final class DatabaseDriverTest extends TestCase
         ));
     }
 
+    public function testItDoesNotReturnAJobWhenTheReservationUpdatesNoRows(): void
+    {
+        $this->driver->push('default', 'payload');
+        $this->connection->executeStatement(
+            'CREATE TRIGGER ignore_claim BEFORE UPDATE ON queue_jobs BEGIN SELECT RAISE(IGNORE); END'
+        );
+
+        self::assertNull($this->driver->pop('default'));
+    }
+
     public function testReleaseMakesAJobAvailableAgainAndDeleteRemovesIt(): void
     {
         $id = $this->driver->push('default', 'payload');

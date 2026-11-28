@@ -107,7 +107,7 @@ Semantic configuration validation is intentionally not part of this release.
 PHP sources must return arrays and mapped environment values are cast by their
 source definitions, but domain constraints such as port ranges or email formats
 remain the responsibility of the consuming subsystem. The proposed future design
-is preserved in the [future configuration validation plan](plans/config-validation.md).
+will be addressed in a future configuration validation design.
 
 #### Main components
 

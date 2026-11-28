@@ -57,14 +57,18 @@ final class DatabaseDriver implements QueueDriverInterface
             }
 
             // Mark as reserved and increment attempts
-            $conn->update(
-                $this->table,
-                [
-                    'reserved_at' => $now,
-                    'attempts' => $job['attempts'] + 1,
-                ],
-                ['id' => $job['id']]
-            );
+            $claimed = $conn->createQueryBuilder()
+                ->update($this->table)
+                ->set('reserved_at', ':reserved')
+                ->set('attempts', 'attempts + 1')
+                ->where('id = :id')
+                ->andWhere('reserved_at IS NULL')
+                ->setParameters(['reserved' => $now, 'id' => $job['id']])
+                ->executeStatement();
+
+            if ((int) $claimed !== 1) {
+                return null;
+            }
 
             return [
                 'id' => $job['id'],

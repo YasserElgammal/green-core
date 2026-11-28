@@ -32,6 +32,15 @@ final class PayloadEncodingTest extends TestCase
         (new QueueManager([]))->decode('{');
     }
 
+    public function testItReadsExistingPayloadsWithDatesAndConfiguredValueObjects(): void
+    {
+        $original = new PayloadEncodingJob(new PayloadValue(new \DateTimeImmutable('2026-11-25T00:00:00Z')));
+        $payload = json_encode(['class' => $original::class, 'data' => serialize($original)], JSON_THROW_ON_ERROR);
+        $manager = new QueueManager(['allowed_payload_classes' => [PayloadValue::class]]);
+
+        self::assertEquals($original, $manager->decode($payload));
+    }
+
     public function testItRejectsPayloadsMissingRequiredFields(): void
     {
         $this->expectException(RuntimeException::class);
@@ -54,8 +63,13 @@ final class PayloadEncodingTest extends TestCase
 
 final class PayloadEncodingJob implements JobInterface
 {
-    public function __construct(public readonly string $value) {}
+    public function __construct(public readonly string|PayloadValue $value) {}
     public function handle(): void {}
     public function maxAttempts(): int { return 1; }
     public function retryDelay(): int { return 0; }
+}
+
+final readonly class PayloadValue
+{
+    public function __construct(public \DateTimeImmutable $date) {}
 }

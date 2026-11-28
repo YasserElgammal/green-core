@@ -6,9 +6,8 @@ use YasserElgammal\Green\Notifications\NotificationChannelInterface;
 
 class SMSChannel implements NotificationChannelInterface
 {
-    public function send(string $recipient, string $message): bool
+    public function send(object $notifiable, \YasserElgammal\Green\Notifications\Notification $notification): void
     {
-        error_log("Sending SMS to {$recipient}: {$message}");
-        return true;
+        throw new \LogicException('Configure a custom SMS channel with a real transport before sending notifications.');
     }
 }

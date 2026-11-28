@@ -955,8 +955,7 @@ class Table
      */
     public function paginateFromBuilder(QueryBuilder $qb, int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
-        // Resolve page from GET if available
-        $page = (int) ($_GET['page'] ?? $page);
+        $page = max(1, $page);
 
         $paginator     = new Paginator();
         $result        = $paginator->paginate($qb, $perPage, $page, $withCount);
@@ -1465,8 +1464,7 @@ class Table
      */
     public function paginate(int $perPage = 15, int $page = 1, bool $withCount = true): array
     {
-        // Resolve page from GET if available
-        $page = (int) ($_GET['page'] ?? $page);
+        $page = max(1, $page);
 
         $paginator = new Paginator();
         $result    = $paginator->paginate($this->builder(), $perPage, $page, $withCount);

@@ -10,9 +10,17 @@
 # Composer (In libraries, it's optional, but usually ignored)
 composer.lock
 
-# PHPUnit
+# Quality tool caches and local overrides
 phpunit.result.cache
 .phpunit.cache/
+.phpstan.cache/
+.php-cs-fixer.cache
+/.php-cs-fixer.php
+
+# Generated coverage reports
+/coverage/
+/coverage.xml
+/clover.xml
 
 # Tests & Environment
 .env
